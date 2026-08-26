@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
+import { isAdminRole } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,13 +12,15 @@ import { getExpenseReportRows } from "@/lib/services/reports";
 import { formatDate, formatINR } from "@/lib/format";
 
 export default async function ExpenseReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("reports");
+  const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
+  const admin = isAdminRole(session.role);
 
   const sp = await searchParams;
+  const departmentFilter = admin ? sp.departmentId : undefined;
   const [rows, departments] = await Promise.all([
-    getExpenseReportRows({ from: sp.from, to: sp.to, departmentId: sp.departmentId }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    getExpenseReportRows({ from: sp.from, to: sp.to, departmentId: departmentFilter }, session),
+    admin ? prisma.department.findMany({ orderBy: { name: "asc" } }) : Promise.resolve([]),
   ]);
   const total = rows.reduce((s, r) => s + r.total, 0);
 
@@ -28,16 +31,18 @@ export default async function ExpenseReportPage({ searchParams }: { searchParams
       <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
         <div className="space-y-1"><label className="text-xs text-muted-foreground">From</label><Input type="date" name="from" defaultValue={sp.from} /></div>
         <div className="space-y-1"><label className="text-xs text-muted-foreground">To</label><Input type="date" name="to" defaultValue={sp.to} /></div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Department</label>
-          <Select name="departmentId" defaultValue={sp.departmentId ?? "all"}>
-            <SelectTrigger className="w-44"><SelectValue placeholder="All departments" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All departments</SelectItem>
-              {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {admin && (
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Department</label>
+            <Select name="departmentId" defaultValue={sp.departmentId ?? "all"}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="All departments" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <Button type="submit" variant="secondary">Filter</Button>
       </form>
 

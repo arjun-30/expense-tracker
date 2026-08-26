@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
+import { isAdminRole, expenseVisibilityWhere } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -34,10 +35,13 @@ export default async function ExpensesPage({
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const q = sp.q?.trim();
   const status = sp.status as ExpenseStatus | undefined;
-  const departmentId = sp.department;
+  const admin = isAdminRole(session.role);
+  // Non-admins can only ever filter within what they're already scoped to see —
+  // ignore any ?department= param they might pass to probe other departments.
+  const departmentId = admin ? sp.department : undefined;
 
   const where = {
-    ...(session.role === Role.EMPLOYEE ? { employeeId: session.sub } : {}),
+    ...expenseVisibilityWhere(session),
     ...(status ? { status } : {}),
     ...(departmentId ? { departmentId } : {}),
     ...(q
@@ -60,14 +64,20 @@ export default async function ExpensesPage({
       take: PAGE_SIZE,
     }),
     prisma.expense.count({ where }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    admin ? prisma.department.findMany({ orderBy: { name: "asc" } }) : Promise.resolve([]),
   ]);
 
   return (
     <div>
       <PageHeader
         title="Expenses"
-        description="All company expenses across departments"
+        description={
+          admin
+            ? "All company expenses across departments"
+            : session.role === Role.EMPLOYEE
+              ? "Your expenses"
+              : "Expenses for your department"
+        }
         action={
           <Button asChild>
             <Link href="/expenses/new">
@@ -88,15 +98,17 @@ export default async function ExpensesPage({
             ))}
           </SelectContent>
         </Select>
-        <Select name="department" defaultValue={departmentId ?? "all"}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="Department" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All departments</SelectItem>
-            {departments.map((d) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {admin && (
+          <Select name="department" defaultValue={departmentId ?? "all"}>
+            <SelectTrigger className="w-48"><SelectValue placeholder="Department" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All departments</SelectItem>
+              {departments.map((d) => (
+                <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button type="submit" variant="secondary">Filter</Button>
       </form>
 

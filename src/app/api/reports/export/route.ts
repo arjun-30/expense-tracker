@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSession } from "@/lib/session";
-import { canAccessModule } from "@/lib/rbac";
+import { getSession, type SessionPayload } from "@/lib/session";
+import { canAccessModule, isAdminRole } from "@/lib/rbac";
 import { toCsv, toExcel, toPdf, type ExportColumn } from "@/lib/services/export";
 import {
   getExpenseReportRows,
@@ -44,9 +44,13 @@ const REPORT_COLUMNS: Record<string, ExportColumn[]> = {
   ],
 };
 
-async function fetchRows(type: string, filters: { from?: string; to?: string; departmentId?: string; categoryId?: string; vendorId?: string }) {
+async function fetchRows(
+  type: string,
+  filters: { from?: string; to?: string; departmentId?: string; categoryId?: string; vendorId?: string },
+  session: SessionPayload
+) {
   switch (type) {
-    case "expenses": return getExpenseReportRows(filters);
+    case "expenses": return getExpenseReportRows(filters, session);
     case "fuel": return getFuelReportRows(filters);
     case "transportation": return getTransportationReportRows(filters);
     case "maintenance": return getMaintenanceReportRows(filters);
@@ -68,13 +72,17 @@ export async function GET(req: NextRequest) {
   const columns = REPORT_COLUMNS[type];
   if (!columns) return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
 
-  const rows = await fetchRows(type, {
-    from: searchParams.get("from") ?? undefined,
-    to: searchParams.get("to") ?? undefined,
-    departmentId: searchParams.get("departmentId") ?? undefined,
-    categoryId: searchParams.get("categoryId") ?? undefined,
-    vendorId: searchParams.get("vendorId") ?? undefined,
-  });
+  const rows = await fetchRows(
+    type,
+    {
+      from: searchParams.get("from") ?? undefined,
+      to: searchParams.get("to") ?? undefined,
+      departmentId: isAdminRole(session.role) ? searchParams.get("departmentId") ?? undefined : undefined,
+      categoryId: searchParams.get("categoryId") ?? undefined,
+      vendorId: searchParams.get("vendorId") ?? undefined,
+    },
+    session
+  );
   if (!rows) return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
 
   const filename = `${type}-report-${new Date().toISOString().slice(0, 10)}`;

@@ -1,16 +1,17 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
+import { canViewExpense, isAdminRole } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { ExpenseForm } from "@/components/expenses/expense-form";
 
 export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
-  const { allowed } = await guardModule("expenses");
+  const { session, allowed } = await guardModule("expenses");
   if (!allowed) return <AccessRestricted />;
 
   const { id } = await params;
-  const [expense, categories, departments, costCenters, vendors] = await Promise.all([
+  const [expense, categories, allDepartments, costCenters, vendors] = await Promise.all([
     prisma.expense.findUnique({ where: { id } }),
     prisma.expenseCategory.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
@@ -18,6 +19,10 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
     prisma.vendor.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
   ]);
   if (!expense) notFound();
+  if (!canViewExpense(session, expense)) return <AccessRestricted />;
+  const departments = isAdminRole(session.role)
+    ? allDepartments
+    : allDepartments.filter((d) => d.id === session.departmentId);
 
   return (
     <div>

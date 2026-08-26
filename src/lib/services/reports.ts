@@ -1,5 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { expenseVisibilityWhere } from "@/lib/rbac";
+import type { SessionPayload } from "@/lib/session";
 
 export interface ReportFilters {
   from?: string;
@@ -16,7 +18,7 @@ function dateRange(f: ReportFilters) {
   };
 }
 
-export async function getExpenseReportRows(f: ReportFilters) {
+export async function getExpenseReportRows(f: ReportFilters, session: SessionPayload) {
   const dr = dateRange(f);
   const expenses = await prisma.expense.findMany({
     where: {
@@ -24,6 +26,8 @@ export async function getExpenseReportRows(f: ReportFilters) {
       ...(f.departmentId ? { departmentId: f.departmentId } : {}),
       ...(f.categoryId ? { categoryId: f.categoryId } : {}),
       ...(f.vendorId ? { vendorId: f.vendorId } : {}),
+      // Spread last so a non-admin's own scoping always wins over any departmentId filter passed in.
+      ...expenseVisibilityWhere(session),
     },
     include: { category: true, department: true, vendor: true, employee: true, costCenter: true },
     orderBy: { date: "desc" },

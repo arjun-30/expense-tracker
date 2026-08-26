@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
+import { canViewExpense } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +45,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   });
   if (!expense) notFound();
 
-  if (session.role === "EMPLOYEE" && expense.employeeId !== session.sub) {
+  if (!canViewExpense(session, expense)) {
     return <AccessRestricted />;
   }
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole, ForbiddenError } from "@/lib/rbac";
+import { requireRole, isAdminRole, ForbiddenError } from "@/lib/rbac";
 import { Role, ExpenseStatus, ApprovalAction } from "@/generated/prisma/enums";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
@@ -46,6 +46,9 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
   const parsed = expenseSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
+  if (!isAdminRole(session.role) && data.departmentId !== session.departmentId) {
+    return { success: false, error: "You can only file expenses under your own department" };
+  }
   const total = expenseTotal(data.amount, data.taxAmount, data.discountAmount);
 
   const expense = await withSequenceRetry(() =>
@@ -91,6 +94,9 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
   const parsed = expenseSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
+  if (!isAdminRole(session.role) && data.departmentId !== session.departmentId) {
+    return { success: false, error: "You can only file expenses under your own department" };
+  }
   const total = expenseTotal(data.amount, data.taxAmount, data.discountAmount);
 
   const updated = await prisma.expense.update({
