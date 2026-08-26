@@ -15,6 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/db";
 import type { SessionPayload } from "@/lib/session";
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : "")).toUpperCase();
+}
+
 export async function AppTopbar({ session }: { session: SessionPayload }) {
   const unreadCount = await prisma.notification.count({
     where: {
@@ -24,10 +29,10 @@ export async function AppTopbar({ session }: { session: SessionPayload }) {
   });
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-background px-4">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card/60 px-4 backdrop-blur-sm">
       <div />
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild className="relative">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" asChild className="relative text-muted-foreground hover:text-foreground">
           <Link href="/notifications">
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
@@ -39,9 +44,14 @@ export async function AppTopbar({ session }: { session: SessionPayload }) {
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="gap-2 px-2">
-              <UserIcon className="h-4 w-4" />
-              <span className="hidden text-sm sm:inline">{session.name}</span>
+            <Button variant="ghost" className="gap-2 pr-2 pl-1.5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+                {initials(session.name) || <UserIcon className="h-3.5 w-3.5" />}
+              </span>
+              <span className="hidden flex-col items-start leading-tight sm:flex">
+                <span className="text-sm font-medium">{session.name}</span>
+                <span className="text-[11px] text-muted-foreground">{ROLE_LABELS[session.role]}</span>
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

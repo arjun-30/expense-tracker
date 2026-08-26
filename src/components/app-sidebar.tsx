@@ -12,19 +12,24 @@ export function AppSidebar({ role }: { role: Role }) {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Factory className="h-5 w-5" />
-        <span className="text-sm font-semibold tracking-tight">Cost Control</span>
+    <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
+      <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+          <Factory className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 leading-tight">
+          <p className="truncate font-heading text-sm font-semibold tracking-tight text-white">Cost Control</p>
+          <p className="truncate text-[11px] text-sidebar-foreground/60">Expense Management</p>
+        </div>
       </div>
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {NAV_SECTIONS.map((section, idx) => {
           const items = section.items.filter((item) => canAccessModuleClient(role, item.key));
           if (items.length === 0) return null;
           return (
             <div key={idx}>
               {section.label && (
-                <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <p className="mb-1.5 px-2.5 text-[10.5px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
                   {section.label}
                 </p>
               )}
@@ -37,13 +42,16 @@ export function AppSidebar({ role }: { role: Role }) {
                       <Link
                         href={item.href}
                         className={cn(
-                          "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                          "relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
                           active
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium"
-                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                         )}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        {active && (
+                          <span className="absolute top-1/2 left-0 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-sidebar-primary" />
+                        )}
+                        <Icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-primary")} />
                         {item.label}
                       </Link>
                     </li>

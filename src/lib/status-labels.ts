@@ -10,12 +10,12 @@ export const EXPENSE_STATUS_LABELS: Record<ExpenseStatus, string> = {
   CANCELLED: "Cancelled",
 };
 
-export const EXPENSE_STATUS_VARIANT: Record<ExpenseStatus, "default" | "secondary" | "destructive" | "outline"> = {
+export const EXPENSE_STATUS_VARIANT: Record<ExpenseStatus, "default" | "secondary" | "destructive" | "outline" | "success"> = {
   DRAFT: "outline",
   SUBMITTED: "secondary",
   UNDER_REVIEW: "secondary",
-  APPROVED: "default",
+  APPROVED: "success",
   REJECTED: "destructive",
-  PAID: "default",
+  PAID: "success",
   CANCELLED: "outline",
 };
