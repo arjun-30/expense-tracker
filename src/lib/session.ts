@@ -47,13 +47,41 @@ export async function clearSessionCookie() {
   store.delete(COOKIE_NAME);
 }
 
+/**
+ * A JWT's signature proves it was issued by us and hasn't expired — it says
+ * nothing about whether its *payload* still matches the current
+ * SessionPayload shape. A cookie signed before the roles/permissions
+ * session redesign (or any other future payload change) verifies here just
+ * fine but carries the old, narrower fields — `session.roles` etc. would be
+ * `undefined`, and every downstream consumer that assumes an array (session
+ * guards, the sidebar, the topbar) throws instead of rendering. Validate the
+ * decoded payload against the shape we actually rely on before trusting it.
+ */
+function isValidSessionPayload(payload: unknown): payload is SessionPayload {
+  if (!payload || typeof payload !== "object") return false;
+  const p = payload as Record<string, unknown>;
+  return (
+    typeof p.sub === "string" &&
+    typeof p.name === "string" &&
+    typeof p.email === "string" &&
+    typeof p.companyId === "string" &&
+    Array.isArray(p.roles) &&
+    Array.isArray(p.roleIds) &&
+    Array.isArray(p.permissions)
+  );
+}
+
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, SECRET);
-    return payload as unknown as SessionPayload;
+    // An outdated or otherwise malformed payload is not a valid session —
+    // treat it the same as logged-out (redirects to /login) rather than
+    // letting `undefined` fields reach code that assumes they're arrays.
+    if (!isValidSessionPayload(payload)) return null;
+    return payload;
   } catch {
     return null;
   }

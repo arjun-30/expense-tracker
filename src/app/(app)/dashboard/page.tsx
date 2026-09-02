@@ -40,6 +40,11 @@ export default async function DashboardPage() {
       getBudgetVsActual(companyId),
     ]);
 
+  // A company with no budgets configured for this period has
+  // budgetUtilizationPct === null — compute the displayed 0% once, rather
+  // than repeating the same null-check inline at each spot that needs it.
+  const budgetUtilizationPct = kpis.budgetUtilizationPct ? Math.round(kpis.budgetUtilizationPct * 100) : 0;
+
   return (
     <div>
       <PageHeader title="Dashboard" description="Company-wide cost overview" />
@@ -57,10 +62,10 @@ export default async function DashboardPage() {
         <KpiCard label="Outstanding Payments" value={kpis.outstandingPaymentsAmount} icon={Wallet} subtext="Approved, not yet paid" />
         <KpiCard
           label="Budget Utilization"
-          value={kpis.budgetUtilizationPct ? Math.round(kpis.budgetUtilizationPct * 100) : 0}
+          value={budgetUtilizationPct}
           icon={PiggyBank}
           formatAsCurrency={false}
-          subtext={`${kpis.budgetUtilizationPct ? (kpis.budgetUtilizationPct * 100).toFixed(0) : 0}% of this month's budget used`}
+          subtext={`${budgetUtilizationPct}% of this month's budget used`}
         />
         <KpiCard label="Fuel (this month)" value={kpis.fuelExpensesThisMonth} icon={Fuel} subtext="Across all vehicles" />
         <KpiCard label="Maintenance (this month)" value={kpis.maintenanceExpensesThisMonth} icon={Wrench} subtext="Labour + spares + other" />

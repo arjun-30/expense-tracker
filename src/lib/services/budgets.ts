@@ -46,8 +46,14 @@ export async function getBudgetsWithActuals(companyId: string) {
       actual += await actualSpendForAllocation(companyId, alloc, b.periodStart, b.periodEnd);
     }
     const amount = Number(b.totalAmount);
-    const first = b.allocations[0];
-    const scope = first?.department?.name ?? first?.category?.name ?? first?.costCenter?.name ?? "Company-wide";
+    // A budget can legitimately have zero allocations (or an allocation
+    // scoped to none of department/category/cost center) — fall through to
+    // "Company-wide" explicitly rather than letting an empty array silently
+    // produce `undefined` through unguarded indexing.
+    const [firstAllocation] = b.allocations;
+    const scope = firstAllocation
+      ? (firstAllocation.department?.name ?? firstAllocation.category?.name ?? firstAllocation.costCenter?.name ?? "Company-wide")
+      : "Company-wide";
     rows.push({
       id: b.id,
       name: b.name,
