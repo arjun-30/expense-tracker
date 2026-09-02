@@ -32,7 +32,8 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 interface RefData {
-  categories: { id: string; name: string; parentId: string | null }[];
+  categories: { id: string; name: string }[];
+  subcategories: { id: string; name: string; categoryId: string }[];
   departments: { id: string; name: string }[];
   costCenters: { id: string; name: string; departmentId: string | null }[];
   vendors: { id: string; name: string }[];
@@ -54,11 +55,11 @@ export function ExpenseForm({ refData, defaultValues, expenseId }: { refData: Re
     },
   });
 
-  const parentCategories = useMemo(() => refData.categories.filter((c) => !c.parentId), [refData.categories]);
+  const parentCategories = refData.categories;
   const selectedParent = watch("categoryId");
   const subcategories = useMemo(
-    () => refData.categories.filter((c) => c.parentId === selectedParent),
-    [refData.categories, selectedParent]
+    () => refData.subcategories.filter((c) => c.categoryId === selectedParent),
+    [refData.subcategories, selectedParent]
   );
   const amount = Number(watch("amount")) || 0;
   const tax = Number(watch("taxAmount")) || 0;

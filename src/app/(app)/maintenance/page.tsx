@@ -6,29 +6,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { MaintenanceFormDialog } from "@/components/maintenance/maintenance-form-dialog";
 import { formatDate, formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 export default async function MaintenancePage() {
   const { session, allowed } = await guardModule("maintenance");
   if (!allowed) return <AccessRestricted />;
 
-  const [records, machines, spareParts] = await Promise.all([
-    prisma.maintenanceRecord.findMany({ include: { machine: true, spares: { include: { sparePart: true } } }, orderBy: { date: "desc" }, take: 100 }),
-    prisma.machine.findMany({ orderBy: { name: "asc" } }),
-    prisma.sparePart.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
+  const [records, machines, consumables] = await Promise.all([
+    prisma.maintenanceRecord.findMany({ where: { machine: { companyId: session.companyId } }, include: { machine: true, spares: { include: { consumable: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
+    prisma.machine.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
+    prisma.consumable.findMany({ where: { companyId: session.companyId, isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.MAINTENANCE_MANAGER];
+  const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER);
 
   return (
     <div>
       <PageHeader
         title="Maintenance"
         description="Maintenance records, breakdowns and downtime"
-        action={canManage.includes(session.role) ? (
+        action={canManage ? (
           <MaintenanceFormDialog
-            machines={machines}
-            spareParts={spareParts.map((s) => ({ id: s.id, name: s.name, currentStock: Number(s.currentStock) }))}
+            machines={machines.map((m) => ({ id: m.id, name: m.name }))}
+            spareParts={consumables.map((s) => ({ id: s.id, name: s.name, currentStock: Number(s.currentStock) }))}
           />
         ) : undefined}
       />
@@ -49,11 +50,11 @@ export default async function MaintenancePage() {
             {records.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.ticketNumber}</TableCell>
-                <TableCell>{formatDate(r.date)}</TableCell>
+                <TableCell>{formatDate(r.startTime ?? r.createdAt)}</TableCell>
                 <TableCell>{r.machine.name}</TableCell>
                 <TableCell><Badge variant="secondary">{r.maintenanceType.replace("_", " ")}</Badge></TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {r.spares.length ? r.spares.map((s) => `${s.sparePart.name} ×${s.quantity}`).join(", ") : "—"}
+                  {r.spares.length ? r.spares.map((s) => `${s.consumable.name} ×${s.quantity}`).join(", ") : "—"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(Number(r.totalCost))}</TableCell>
                 <TableCell className="text-right tabular-nums">{r.downtimeMinutes ? `${r.downtimeMinutes} min` : "—"}</TableCell>

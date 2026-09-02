@@ -22,7 +22,8 @@ export async function getExpenseReportRows(f: ReportFilters, session: SessionPay
   const dr = dateRange(f);
   const expenses = await prisma.expense.findMany({
     where: {
-      ...(Object.keys(dr).length ? { date: dr } : {}),
+      companyId: session.companyId,
+      ...(Object.keys(dr).length ? { expenseDate: dr } : {}),
       ...(f.departmentId ? { departmentId: f.departmentId } : {}),
       ...(f.categoryId ? { categoryId: f.categoryId } : {}),
       ...(f.vendorId ? { vendorId: f.vendorId } : {}),
@@ -30,11 +31,11 @@ export async function getExpenseReportRows(f: ReportFilters, session: SessionPay
       ...expenseVisibilityWhere(session),
     },
     include: { category: true, department: true, vendor: true, employee: true, costCenter: true },
-    orderBy: { date: "desc" },
+    orderBy: { expenseDate: "desc" },
   });
   return expenses.map((e) => ({
     expenseNumber: e.expenseNumber,
-    date: e.date,
+    date: e.expenseDate,
     category: e.category.name,
     department: e.department.name,
     costCenter: e.costCenter?.name ?? "",
@@ -47,10 +48,10 @@ export async function getExpenseReportRows(f: ReportFilters, session: SessionPay
   }));
 }
 
-export async function getFuelReportRows(f: ReportFilters) {
+export async function getFuelReportRows(companyId: string, f: ReportFilters) {
   const dr = dateRange(f);
   const txns = await prisma.fuelTransaction.findMany({
-    where: Object.keys(dr).length ? { date: dr } : {},
+    where: { vehicle: { companyId }, ...(Object.keys(dr).length ? { date: dr } : {}) },
     include: { vehicle: true, driver: true },
     orderBy: { date: "desc" },
   });
@@ -60,17 +61,16 @@ export async function getFuelReportRows(f: ReportFilters) {
     driver: t.driver?.name ?? "",
     litres: Number(t.litres),
     amount: Number(t.totalAmount),
-    distance: Number(t.distanceTravelled),
+    distance: t.distanceTravelled ? Number(t.distanceTravelled) : "",
     efficiency: t.efficiencyKmpl ? Number(t.efficiencyKmpl) : "",
-    costPerKm: t.costPerKm ? Number(t.costPerKm) : "",
     anomaly: t.isAnomaly ? "Yes" : "No",
   }));
 }
 
-export async function getTransportationReportRows(f: ReportFilters) {
+export async function getTransportationReportRows(companyId: string, f: ReportFilters) {
   const dr = dateRange(f);
   const trips = await prisma.transportTrip.findMany({
-    where: Object.keys(dr).length ? { date: dr } : {},
+    where: { companyId, ...(Object.keys(dr).length ? { date: dr } : {}) },
     include: { vehicle: true, transporter: true },
     orderBy: { date: "desc" },
   });
@@ -84,46 +84,44 @@ export async function getTransportationReportRows(f: ReportFilters) {
     quantity: t.quantity ? Number(t.quantity) : "",
     unit: t.unit ?? "",
     totalCost: Number(t.totalCost),
-    costPerKg: t.costPerKg ? Number(t.costPerKg) : "",
   }));
 }
 
-export async function getMaintenanceReportRows(f: ReportFilters) {
+export async function getMaintenanceReportRows(companyId: string, f: ReportFilters) {
   const dr = dateRange(f);
   const records = await prisma.maintenanceRecord.findMany({
-    where: Object.keys(dr).length ? { date: dr } : {},
+    where: { machine: { companyId }, ...(Object.keys(dr).length ? { createdAt: dr } : {}) },
     include: { machine: true },
-    orderBy: { date: "desc" },
+    orderBy: { createdAt: "desc" },
   });
   return records.map((r) => ({
     ticketNumber: r.ticketNumber,
-    date: r.date,
+    date: r.startTime ?? r.createdAt,
     machine: r.machine.name,
     type: r.maintenanceType,
     labourCost: Number(r.labourCost),
-    sparePartsCost: Number(r.sparePartsCost),
+    consumablesCost: Number(r.consumablesCost),
     otherCost: Number(r.otherCost),
     totalCost: Number(r.totalCost),
     downtimeMinutes: r.downtimeMinutes ?? "",
   }));
 }
 
-export async function getSpareReportRows() {
-  const spares = await prisma.sparePart.findMany({ include: { supplier: true }, orderBy: { name: "asc" } });
-  return spares.map((s) => ({
+export async function getSpareReportRows(companyId: string) {
+  const consumables = await prisma.consumable.findMany({ where: { companyId }, orderBy: { name: "asc" } });
+  return consumables.map((s) => ({
     partNumber: s.partNumber,
     name: s.name,
-    supplier: s.supplier?.name ?? "",
     currentStock: Number(s.currentStock),
     minimumStock: Number(s.minimumStock),
-    unitPrice: Number(s.purchasePrice),
+    unitPrice: Number(s.unitCost),
     status: Number(s.currentStock) < Number(s.minimumStock) ? "Low Stock" : "OK",
   }));
 }
 
-export async function getBudgetReportRows() {
+export async function getBudgetReportRows(companyId: string) {
   const { getBudgetsWithActuals } = await import("@/lib/services/budgets");
-  const rows = await getBudgetsWithActuals();
+  const rows = await getBudgetsWithActuals(companyId);
   return rows.map((b) => ({
     name: b.name,
     scope: b.scope,

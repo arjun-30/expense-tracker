@@ -16,45 +16,37 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { transitionExpenseAction } from "@/lib/actions/expenses";
-import type { Role, ExpenseStatus } from "@/generated/prisma/enums";
+import type { ExpenseStatus } from "@/generated/prisma/enums";
 
-const ROLE_ACTIONS: Record<string, { key: string; label: string; variant?: "default" | "destructive" | "outline" }[]> = {
+const STATUS_ACTIONS: Record<string, { key: string; label: string; variant?: "default" | "destructive" | "outline"; ownerOnly?: boolean; permission?: string }[]> = {
   DRAFT: [
-    { key: "submit", label: "Submit for approval" },
-    { key: "cancel", label: "Cancel", variant: "outline" },
+    { key: "submit", label: "Submit for approval", ownerOnly: true },
+    { key: "cancel", label: "Cancel", variant: "outline", ownerOnly: true },
   ],
   SUBMITTED: [
-    { key: "review", label: "Mark reviewed" },
-    { key: "approve", label: "Approve" },
-    { key: "reject", label: "Reject", variant: "destructive" },
+    { key: "review", label: "Mark reviewed", permission: "expenses.review" },
+    { key: "approve", label: "Approve", permission: "expenses.approve" },
+    { key: "reject", label: "Reject", variant: "destructive", permission: "expenses.reject" },
   ],
   UNDER_REVIEW: [
-    { key: "verify", label: "Mark verified" },
-    { key: "approve", label: "Approve" },
-    { key: "reject", label: "Reject", variant: "destructive" },
+    { key: "verify", label: "Mark verified", permission: "expenses.verify" },
+    { key: "approve", label: "Approve", permission: "expenses.approve" },
+    { key: "reject", label: "Reject", variant: "destructive", permission: "expenses.reject" },
   ],
-  APPROVED: [{ key: "markPaid", label: "Mark as paid" }],
-};
-
-const ROLE_PERMS: Record<string, string[]> = {
-  SUPER_ADMIN: ["submit", "cancel", "review", "verify", "approve", "reject", "markPaid"],
-  ADMIN: ["review", "approve", "reject"],
-  ACCOUNTS: ["verify", "reject", "markPaid"],
-  EMPLOYEE: ["submit", "cancel"],
-  PURCHASE_MANAGER: ["submit", "cancel"],
-  MAINTENANCE_MANAGER: ["submit", "cancel"],
-  TRANSPORT_MANAGER: ["submit", "cancel"],
+  APPROVED: [{ key: "markPaid", label: "Mark as paid", permission: "expenses.mark_paid" }],
 };
 
 export function ExpenseActions({
   expenseId,
   status,
-  role,
+  roles,
+  permissions,
   isOwner,
 }: {
   expenseId: string;
   status: ExpenseStatus;
-  role: Role;
+  roles: string[];
+  permissions: string[];
   isOwner: boolean;
 }) {
   const router = useRouter();
@@ -62,12 +54,11 @@ export function ExpenseActions({
   const [rejectOpen, setRejectOpen] = useState(false);
   const [remarks, setRemarks] = useState("");
 
-  const candidates = ROLE_ACTIONS[status] ?? [];
-  const allowedKeys = new Set(ROLE_PERMS[role] ?? []);
+  const isAdmin = roles.includes("SUPER_ADMIN") || roles.includes("ADMIN");
+  const candidates = STATUS_ACTIONS[status] ?? [];
   const actions = candidates.filter((a) => {
-    const ownerGated = a.key === "submit" || a.key === "cancel";
-    if (ownerGated) return isOwner || role === "SUPER_ADMIN" || role === "ADMIN";
-    return allowedKeys.has(a.key);
+    if (a.ownerOnly) return isOwner || isAdmin;
+    return a.permission ? permissions.includes(a.permission) : false;
   });
 
   function run(key: string, withRemarks?: string) {

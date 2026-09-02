@@ -8,11 +8,11 @@ import { getSpareReportRows } from "@/lib/services/reports";
 import { formatINR } from "@/lib/format";
 
 export default async function SpareReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("reports");
+  const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
 
   const sp = await searchParams;
-  const rows = await getSpareReportRows();
+  const rows = await getSpareReportRows(session.companyId);
 
   return (
     <div>
@@ -21,7 +21,7 @@ export default async function SpareReportPage({ searchParams }: { searchParams: 
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Part #</TableHead><TableHead>Name</TableHead><TableHead>Supplier</TableHead>
+              <TableHead>Part #</TableHead><TableHead>Name</TableHead>
               <TableHead className="text-right">Stock</TableHead><TableHead className="text-right">Min</TableHead>
               <TableHead className="text-right">Unit Price</TableHead><TableHead>Status</TableHead>
             </TableRow>
@@ -31,14 +31,13 @@ export default async function SpareReportPage({ searchParams }: { searchParams: 
               <TableRow key={i}>
                 <TableCell className="font-medium">{r.partNumber}</TableCell>
                 <TableCell>{r.name}</TableCell>
-                <TableCell>{r.supplier || "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{r.currentStock}</TableCell>
                 <TableCell className="text-right tabular-nums">{r.minimumStock}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(r.unitPrice)}</TableCell>
                 <TableCell><Badge variant={r.status === "Low Stock" ? "secondary" : "outline"}>{r.status}</Badge></TableCell>
               </TableRow>
             ))}
-            {rows.length === 0 && <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No data.</TableCell></TableRow>}
+            {rows.length === 0 && <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No data.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>

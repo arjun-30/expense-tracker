@@ -8,26 +8,27 @@ import { Progress } from "@/components/ui/progress";
 import { BudgetFormDialog } from "@/components/budgets/budget-form-dialog";
 import { getBudgetsWithActuals } from "@/lib/services/budgets";
 import { formatDate, formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 export default async function BudgetsPage() {
   const { session, allowed } = await guardModule("budgets");
   if (!allowed) return <AccessRestricted />;
 
   const [budgets, departments, categories] = await Promise.all([
-    getBudgetsWithActuals(),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
-    prisma.expenseCategory.findMany({ where: { parentId: null }, orderBy: { name: "asc" } }),
+    getBudgetsWithActuals(session.companyId),
+    prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
+    prisma.expenseCategory.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
   ]);
 
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS];
+  const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS);
 
   return (
     <div>
       <PageHeader
         title="Budgets"
         description="Budget allocations and variance tracking"
-        action={canManage.includes(session.role) ? <BudgetFormDialog departments={departments} categories={categories} /> : undefined}
+        action={canManage ? <BudgetFormDialog departments={departments} categories={categories} /> : undefined}
       />
       <div className="rounded-lg border bg-card">
         <Table>

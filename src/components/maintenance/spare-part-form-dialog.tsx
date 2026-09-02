@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -11,37 +11,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createSparePartAction } from "@/lib/actions/maintenance";
+import { createConsumableAction } from "@/lib/actions/maintenance";
 
 const schema = z.object({
   partNumber: z.string().min(1, "Required"),
   name: z.string().min(1, "Required"),
   category: z.string().optional(),
-  supplierId: z.string().optional(),
   unit: z.string().min(1),
-  purchasePrice: z.number().min(0),
+  unitCost: z.number().min(0),
   currentStock: z.number().min(0),
   minimumStock: z.number().min(0),
   storageLocation: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
-export function SparePartFormDialog({ vendors }: { vendors: { id: string; name: string }[] }) {
+// Consumables have no default-supplier field any more — supplier is only
+// ever recorded per purchase order (see prisma/SCHEMA_MIGRATION_NOTES.md §3).
+export function SparePartFormDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { register, control, handleSubmit, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { unit: "pcs", purchasePrice: 0, currentStock: 0, minimumStock: 0 },
+    defaultValues: { unit: "pcs", unitCost: 0, currentStock: 0, minimumStock: 0 },
   });
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
-    const result = await createSparePartAction({
+    const result = await createConsumableAction({
       ...values,
       category: values.category || null,
-      supplierId: values.supplierId || null,
       storageLocation: values.storageLocation || null,
       maximumStock: null,
     });
@@ -73,21 +72,12 @@ export function SparePartFormDialog({ vendors }: { vendors: { id: string; name: 
             <Input id="category" {...register("category")} />
           </div>
           <div className="space-y-1">
-            <Label>Supplier</Label>
-            <Controller control={control} name="supplierId" render={({ field }) => (
-              <Select onValueChange={field.onChange} value={field.value}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
-              </Select>
-            )} />
-          </div>
-          <div className="space-y-1">
             <Label htmlFor="unit">Unit</Label>
             <Input id="unit" {...register("unit")} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="purchasePrice">Unit price (₹)</Label>
-            <Input id="purchasePrice" type="number" step="0.01" {...register("purchasePrice", { valueAsNumber: true })} />
+            <Label htmlFor="unitCost">Unit price (₹)</Label>
+            <Input id="unitCost" type="number" step="0.01" {...register("unitCost", { valueAsNumber: true })} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="currentStock">Opening stock</Label>

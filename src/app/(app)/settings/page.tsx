@@ -6,30 +6,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { QuickAddDepartment, QuickAddCostCenter, QuickAddCategory, AlertRuleToggle } from "@/components/settings/quick-add-forms";
+import { QuickAddDepartment, QuickAddCostCenter, QuickAddCategory, QuickAddSubcategory, AlertRuleToggle } from "@/components/settings/quick-add-forms";
 
 export default async function SettingsPage() {
-  const { allowed } = await guardModule("settings");
+  const { session, allowed } = await guardModule("settings");
   if (!allowed) return <AccessRestricted />;
 
-  const [departments, costCenters, categories, alertRules] = await Promise.all([
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
-    prisma.costCenter.findMany({ include: { department: true }, orderBy: { name: "asc" } }),
-    prisma.expenseCategory.findMany({ orderBy: { name: "asc" } }),
-    prisma.alertRule.findMany({ orderBy: { module: "asc" } }),
+  const [departments, costCenters, categories, notificationRules] = await Promise.all([
+    prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
+    prisma.costCenter.findMany({ where: { companyId: session.companyId }, include: { department: true }, orderBy: { name: "asc" } }),
+    prisma.expenseCategory.findMany({ where: { companyId: session.companyId }, include: { subcategories: true }, orderBy: { name: "asc" } }),
+    prisma.notificationRule.findMany({ where: { companyId: session.companyId }, orderBy: { key: "asc" } }),
   ]);
-  const parentCategories = categories.filter((c) => !c.parentId);
 
   return (
     <div>
-      <PageHeader title="Settings" description="Categories, departments, cost centers and alert rules" />
+      <PageHeader title="Settings" description="Categories, departments, cost centers and notification rules" />
 
       <Tabs defaultValue="departments">
         <TabsList>
           <TabsTrigger value="departments">Departments</TabsTrigger>
           <TabsTrigger value="cost-centers">Cost Centers</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="rules">Alert Rules</TabsTrigger>
+          <TabsTrigger value="rules">Notification Rules</TabsTrigger>
         </TabsList>
 
         <TabsContent value="departments">
@@ -66,15 +65,20 @@ export default async function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Expense Categories</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <QuickAddCategory parents={parentCategories} />
+              <div className="flex flex-col gap-2">
+                <QuickAddCategory />
+                <QuickAddSubcategory categories={categories} />
+              </div>
               <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Code</TableHead><TableHead>Parent</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Code</TableHead><TableHead>Subcategories</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {categories.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell>{c.name}</TableCell>
                       <TableCell className="text-muted-foreground">{c.code}</TableCell>
-                      <TableCell>{categories.find((p) => p.id === c.parentId)?.name ?? "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {c.subcategories.length ? c.subcategories.map((s) => s.name).join(", ") : "—"}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -85,18 +89,15 @@ export default async function SettingsPage() {
 
         <TabsContent value="rules">
           <Card>
-            <CardHeader><CardTitle className="text-base">Automated Alert Rules</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Automated Notification Rules</CardTitle></CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Rule</TableHead><TableHead>Module</TableHead><TableHead>Severity</TableHead><TableHead>Active</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Rule</TableHead><TableHead>Key</TableHead><TableHead>Severity</TableHead><TableHead>Active</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {alertRules.map((r) => (
+                  {notificationRules.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell>
-                        <p className="font-medium">{r.name}</p>
-                        {r.description && <p className="text-xs text-muted-foreground">{r.description}</p>}
-                      </TableCell>
-                      <TableCell>{r.module}</TableCell>
+                      <TableCell className="font-medium">{r.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{r.key}</TableCell>
                       <TableCell><Badge variant={r.severity === "CRITICAL" ? "destructive" : r.severity === "WARNING" ? "secondary" : "outline"}>{r.severity}</Badge></TableCell>
                       <TableCell><AlertRuleToggle id={r.id} isActive={r.isActive} /></TableCell>
                     </TableRow>

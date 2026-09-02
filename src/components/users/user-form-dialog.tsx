@@ -14,17 +14,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createUserAction } from "@/lib/actions/users";
 import { ROLE_LABELS } from "@/lib/role-labels";
+import type { RoleName } from "@/lib/rbac-client";
 
 const schema = z.object({
   name: z.string().min(1, "Required"),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
-  role: z.string().min(1, "Required"),
+  roleId: z.string().min(1, "Required"),
   departmentId: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
-export function UserFormDialog({ departments }: { departments: { id: string; name: string }[] }) {
+export function UserFormDialog({ roles, departments }: { roles: { id: string; name: string }[]; departments: { id: string; name: string }[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +33,7 @@ export function UserFormDialog({ departments }: { departments: { id: string; nam
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
-    const result = await createUserAction({ ...values, role: values.role as never, departmentId: values.departmentId || null });
+    const result = await createUserAction({ ...values, departmentId: values.departmentId || null });
     setSubmitting(false);
     if (!result.success) { toast.error(result.error ?? "Something went wrong"); return; }
     toast.success("User created");
@@ -64,15 +65,15 @@ export function UserFormDialog({ departments }: { departments: { id: string; nam
           </div>
           <div className="space-y-1">
             <Label>Role *</Label>
-            <Controller control={control} name="role" render={({ field }) => (
+            <Controller control={control} name="roleId" render={({ field }) => (
               <Select onValueChange={field.onChange} value={field.value}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  {roles.map((r) => <SelectItem key={r.id} value={r.id}>{ROLE_LABELS[r.name as RoleName] ?? r.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             )} />
-            {errors.role && <p className="text-xs text-destructive">{errors.role.message}</p>}
+            {errors.roleId && <p className="text-xs text-destructive">{errors.roleId.message}</p>}
           </div>
           <div className="space-y-1">
             <Label>Department</Label>

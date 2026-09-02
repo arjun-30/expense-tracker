@@ -10,15 +10,15 @@ import { formatDate } from "@/lib/format";
 const PAGE_SIZE = 30;
 
 export default async function AuditLogsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("auditLogs");
+  const { session, allowed } = await guardModule("auditLogs");
   if (!allowed) return <AccessRestricted />;
 
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
-  const moduleFilter = sp.module;
+  const entityTypeFilter = sp.module;
 
-  const where = moduleFilter ? { module: moduleFilter } : {};
-  const [logs, total, distinctModules] = await Promise.all([
+  const where = { companyId: session.companyId, ...(entityTypeFilter ? { entityType: entityTypeFilter } : {}) };
+  const [logs, total, distinctEntityTypes] = await Promise.all([
     prisma.auditLog.findMany({
       where,
       include: { user: true },
@@ -27,7 +27,7 @@ export default async function AuditLogsPage({ searchParams }: { searchParams: Pr
       take: PAGE_SIZE,
     }),
     prisma.auditLog.count({ where }),
-    prisma.auditLog.findMany({ distinct: ["module"], select: { module: true } }),
+    prisma.auditLog.findMany({ where: { companyId: session.companyId }, distinct: ["entityType"], select: { entityType: true } }),
   ]);
 
   return (
@@ -35,12 +35,12 @@ export default async function AuditLogsPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Audit Logs" description="Immutable log of sensitive actions across the system" />
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {distinctModules.map((m) => (
-          <a key={m.module} href={`/audit-logs?module=${m.module}`}>
-            <Badge variant={moduleFilter === m.module ? "default" : "outline"} className="cursor-pointer">{m.module}</Badge>
+        {distinctEntityTypes.map((m) => (
+          <a key={m.entityType} href={`/audit-logs?module=${m.entityType}`}>
+            <Badge variant={entityTypeFilter === m.entityType ? "default" : "outline"} className="cursor-pointer">{m.entityType}</Badge>
           </a>
         ))}
-        {moduleFilter && <a href="/audit-logs"><Badge variant="outline" className="cursor-pointer">Clear filter</Badge></a>}
+        {entityTypeFilter && <a href="/audit-logs"><Badge variant="outline" className="cursor-pointer">Clear filter</Badge></a>}
       </div>
 
       <div className="rounded-lg border bg-card">
@@ -50,7 +50,7 @@ export default async function AuditLogsPage({ searchParams }: { searchParams: Pr
               <TableHead>Time</TableHead>
               <TableHead>User</TableHead>
               <TableHead>Action</TableHead>
-              <TableHead>Module</TableHead>
+              <TableHead>Entity</TableHead>
               <TableHead>Record</TableHead>
             </TableRow>
           </TableHeader>
@@ -60,8 +60,8 @@ export default async function AuditLogsPage({ searchParams }: { searchParams: Pr
                 <TableCell className="text-sm text-muted-foreground">{formatDate(log.createdAt)}</TableCell>
                 <TableCell>{log.user?.name ?? "System"}</TableCell>
                 <TableCell><Badge variant="secondary">{log.action}</Badge></TableCell>
-                <TableCell>{log.module}</TableCell>
-                <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{log.recordId ?? "—"}</TableCell>
+                <TableCell>{log.entityType}</TableCell>
+                <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{log.entityId ?? "—"}</TableCell>
               </TableRow>
             ))}
             {logs.length === 0 && (

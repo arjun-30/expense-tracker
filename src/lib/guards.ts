@@ -10,5 +10,5 @@ import type { SessionPayload } from "@/lib/session";
 export async function guardModule(moduleKey: string): Promise<{ session: SessionPayload; allowed: boolean }> {
   const session = await getSession();
   if (!session) redirect("/login");
-  return { session, allowed: canAccessModule(session.role, moduleKey) };
+  return { session, allowed: canAccessModule(session, moduleKey) };
 }

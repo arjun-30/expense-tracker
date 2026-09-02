@@ -4,54 +4,69 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-async function requireSuperAdmin() {
+const SETTINGS_PERMISSIONS = ["settings.manage"];
+
+async function requireSettingsAccess() {
   const session = await requireSession();
-  requireRole(session, [Role.SUPER_ADMIN]);
+  requirePermission(session, SETTINGS_PERMISSIONS);
   return session;
 }
 
 export async function createDepartmentAction(name: string, code: string): Promise<ActionResult> {
-  const session = await requireSuperAdmin();
+  const session = await requireSettingsAccess();
   const parsed = z.object({ name: z.string().min(1), code: z.string().min(1) }).safeParse({ name, code });
   if (!parsed.success) return { success: false, error: "Name and code are required" };
 
-  const dept = await prisma.department.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "settings", recordId: dept.id, newValue: dept });
+  const dept = await prisma.department.create({ data: { ...parsed.data, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Department", entityId: dept.id, newValue: dept });
   revalidatePath("/settings");
   return { success: true, id: dept.id };
 }
 
 export async function createCostCenterAction(name: string, code: string, departmentId: string | null): Promise<ActionResult> {
-  const session = await requireSuperAdmin();
+  const session = await requireSettingsAccess();
   const parsed = z.object({ name: z.string().min(1), code: z.string().min(1) }).safeParse({ name, code });
   if (!parsed.success) return { success: false, error: "Name and code are required" };
 
-  const cc = await prisma.costCenter.create({ data: { ...parsed.data, departmentId } });
-  await audit({ userId: session.sub, action: "CREATE", module: "settings", recordId: cc.id, newValue: cc });
+  const cc = await prisma.costCenter.create({ data: { ...parsed.data, departmentId, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "CostCenter", entityId: cc.id, newValue: cc });
   revalidatePath("/settings");
   return { success: true, id: cc.id };
 }
 
-export async function createCategoryAction(name: string, code: string, parentId: string | null): Promise<ActionResult> {
-  const session = await requireSuperAdmin();
+// Categories are always top-level now — nesting is at most 2 levels
+// (category -> subcategory), modeled as two separate flat tables
+// (OPEN_DECISIONS.md #3). Use createSubcategoryAction for the second level.
+export async function createCategoryAction(name: string, code: string): Promise<ActionResult> {
+  const session = await requireSettingsAccess();
   const parsed = z.object({ name: z.string().min(1), code: z.string().min(1) }).safeParse({ name, code });
   if (!parsed.success) return { success: false, error: "Name and code are required" };
 
-  const cat = await prisma.expenseCategory.create({ data: { ...parsed.data, parentId } });
-  await audit({ userId: session.sub, action: "CREATE", module: "settings", recordId: cat.id, newValue: cat });
+  const cat = await prisma.expenseCategory.create({ data: { ...parsed.data, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "ExpenseCategory", entityId: cat.id, newValue: cat });
   revalidatePath("/settings");
   return { success: true, id: cat.id };
 }
 
-export async function toggleAlertRuleAction(id: string, isActive: boolean): Promise<ActionResult> {
-  const session = await requireSuperAdmin();
-  await prisma.alertRule.update({ where: { id }, data: { isActive } });
-  await audit({ userId: session.sub, action: isActive ? "ENABLE_RULE" : "DISABLE_RULE", module: "settings", recordId: id });
+export async function createSubcategoryAction(name: string, code: string, categoryId: string): Promise<ActionResult> {
+  const session = await requireSettingsAccess();
+  const parsed = z.object({ name: z.string().min(1), code: z.string().min(1), categoryId: z.string().min(1) }).safeParse({ name, code, categoryId });
+  if (!parsed.success) return { success: false, error: "Name, code, and parent category are required" };
+
+  const sub = await prisma.expenseSubcategory.create({ data: parsed.data });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "ExpenseSubcategory", entityId: sub.id, newValue: sub });
+  revalidatePath("/settings");
+  return { success: true, id: sub.id };
+}
+
+export async function toggleNotificationRuleAction(id: string, isActive: boolean): Promise<ActionResult> {
+  const session = await requireSettingsAccess();
+  await prisma.notificationRule.update({ where: { id }, data: { isActive } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: isActive ? "ENABLE_RULE" : "DISABLE_RULE", entityType: "NotificationRule", entityId: id });
   revalidatePath("/settings");
   return { success: true };
 }

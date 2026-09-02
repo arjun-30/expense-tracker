@@ -4,12 +4,11 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-const BUDGET_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS];
+const BUDGET_PERMISSIONS = ["budgets.manage"];
 
 const budgetSchema = z.object({
   name: z.string().min(1),
@@ -23,18 +22,38 @@ const budgetSchema = z.object({
 });
 export type BudgetInput = z.infer<typeof budgetSchema>;
 
+// Every budget is created as one parent `budgets` row with exactly one
+// matching `budget_allocations` row underneath it (same department/category/
+// cost center, same total amount) — confirmed sufficient, no multi-department
+// budgets needed at this time (OPEN_DECISIONS.md #11).
 export async function createBudgetAction(input: BudgetInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, BUDGET_ROLES);
+  requirePermission(session, BUDGET_PERMISSIONS);
   const parsed = budgetSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
   if (data.periodEnd <= data.periodStart) return { success: false, error: "End date must be after start date" };
 
   const budget = await prisma.budget.create({
-    data: { ...data, createdById: session.sub },
+    data: {
+      companyId: session.companyId,
+      name: data.name,
+      period: data.period,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      totalAmount: data.amount,
+      createdById: session.sub,
+      allocations: {
+        create: {
+          departmentId: data.departmentId || null,
+          categoryId: data.categoryId || null,
+          costCenterId: data.costCenterId || null,
+          allocatedAmount: data.amount,
+        },
+      },
+    },
   });
-  await audit({ userId: session.sub, action: "CREATE", module: "budgets", recordId: budget.id, newValue: budget });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Budget", entityId: budget.id, newValue: budget });
   revalidatePath("/budgets");
   return { success: true, id: budget.id };
 }

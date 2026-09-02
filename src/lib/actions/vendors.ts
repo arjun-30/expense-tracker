@@ -4,12 +4,11 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-const VENDOR_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.PURCHASE_MANAGER];
+const VENDOR_PERMISSIONS = ["vendors.manage"];
 
 const vendorSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -25,29 +24,34 @@ const vendorSchema = z.object({
 });
 export type VendorInput = z.infer<typeof vendorSchema>;
 
+function toVendorData(data: z.infer<typeof vendorSchema>) {
+  const { status, ...rest } = data;
+  return { ...rest, isActive: status === "ACTIVE" };
+}
+
 export async function createVendorAction(input: VendorInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, VENDOR_ROLES);
+  requirePermission(session, VENDOR_PERMISSIONS);
   const parsed = vendorSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
-  const vendor = await prisma.vendor.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "vendors", recordId: vendor.id, newValue: vendor });
+  const vendor = await prisma.vendor.create({ data: { ...toVendorData(parsed.data), companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Vendor", entityId: vendor.id, newValue: vendor });
   revalidatePath("/vendors");
   return { success: true, id: vendor.id };
 }
 
 export async function updateVendorAction(id: string, input: VendorInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, VENDOR_ROLES);
+  requirePermission(session, VENDOR_PERMISSIONS);
   const parsed = vendorSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
   const existing = await prisma.vendor.findUnique({ where: { id } });
   if (!existing) return { success: false, error: "Vendor not found" };
 
-  const vendor = await prisma.vendor.update({ where: { id }, data: parsed.data });
-  await audit({ userId: session.sub, action: "UPDATE", module: "vendors", recordId: id, oldValue: existing, newValue: vendor });
+  const vendor = await prisma.vendor.update({ where: { id }, data: toVendorData(parsed.data) });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "UPDATE", entityType: "Vendor", entityId: id, oldValue: existing, newValue: vendor });
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
   return { success: true, id };

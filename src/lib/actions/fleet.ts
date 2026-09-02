@@ -4,15 +4,18 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role, AlertSeverity } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
+import { NotificationSeverity } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/rbac-client";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
-import { fuelEfficiencyKmpl, fuelCostPerKm, transportCostPerKg } from "@/lib/services/calculations";
+import { fuelEfficiencyKmpl } from "@/lib/services/calculations";
 import { nextSequenceNumber, withSequenceRetry } from "@/lib/services/sequence";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-const FLEET_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.TRANSPORT_MANAGER];
+const VEHICLE_PERMISSIONS = ["vehicles.manage"];
+const FUEL_PERMISSIONS = ["fuel.manage"];
+const TRANSPORT_PERMISSIONS = ["transportation.manage"];
 
 const vehicleSchema = z.object({
   registrationNumber: z.string().min(1),
@@ -20,7 +23,6 @@ const vehicleSchema = z.object({
   manufacturer: z.string().optional().nullable(),
   model: z.string().optional().nullable(),
   year: z.coerce.number().optional().nullable(),
-  driverId: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   currentOdometer: z.coerce.number().min(0).default(0),
   insuranceExpiry: z.coerce.date().optional().nullable(),
@@ -29,14 +31,36 @@ const vehicleSchema = z.object({
 });
 export type VehicleInput = z.infer<typeof vehicleSchema>;
 
+// A vehicle's insurance/fitness/pollution expiry dates are no longer scalar
+// columns on Vehicle — they're rows in `vehicle_documents` (one per document
+// type), which also carries a `storage_key` for the scanned certificate.
+// This form only collects the expiry date, not a file upload, so new
+// documents are created with a placeholder storage key until a real upload
+// flow is built for vehicle documents (out of scope for this cutover).
+const PENDING_UPLOAD_KEY = "pending-upload";
+
 export async function createVehicleAction(input: VehicleInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, FLEET_ROLES);
+  requirePermission(session, VEHICLE_PERMISSIONS);
   const parsed = vehicleSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  const { insuranceExpiry, pollutionExpiry, fitnessExpiry, ...data } = parsed.data;
 
-  const vehicle = await prisma.vehicle.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "vehicles", recordId: vehicle.id, newValue: vehicle });
+  const vehicle = await prisma.$transaction(async (tx) => {
+    const created = await tx.vehicle.create({ data: { ...data, companyId: session.companyId } });
+    const documents: { documentType: "INSURANCE" | "POLLUTION" | "FITNESS"; validUntil: Date }[] = [];
+    if (insuranceExpiry) documents.push({ documentType: "INSURANCE", validUntil: insuranceExpiry });
+    if (pollutionExpiry) documents.push({ documentType: "POLLUTION", validUntil: pollutionExpiry });
+    if (fitnessExpiry) documents.push({ documentType: "FITNESS", validUntil: fitnessExpiry });
+    if (documents.length) {
+      await tx.vehicleDocument.createMany({
+        data: documents.map((d) => ({ vehicleId: created.id, documentType: d.documentType, validUntil: d.validUntil, storageKey: PENDING_UPLOAD_KEY })),
+      });
+    }
+    return created;
+  });
+
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Vehicle", entityId: vehicle.id, newValue: vehicle });
   revalidatePath("/vehicles");
   return { success: true, id: vehicle.id };
 }
@@ -51,11 +75,11 @@ export type DriverInput = z.infer<typeof driverSchema>;
 
 export async function createDriverAction(input: DriverInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, FLEET_ROLES);
+  requirePermission(session, VEHICLE_PERMISSIONS);
   const parsed = driverSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const driver = await prisma.driver.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "vehicles", recordId: driver.id, newValue: driver });
+  const driver = await prisma.driver.create({ data: { ...parsed.data, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Driver", entityId: driver.id, newValue: driver });
   revalidatePath("/vehicles");
   return { success: true, id: driver.id };
 }
@@ -69,8 +93,6 @@ const fuelSchema = z.object({
   litres: z.coerce.number().positive(),
   ratePerLitre: z.coerce.number().positive(),
   odometerReading: z.coerce.number().positive(),
-  paymentMethod: z.enum(["CASH", "UPI", "BANK_TRANSFER", "NEFT", "RTGS", "CHEQUE", "CREDIT"]).optional().nullable(),
-  remarks: z.string().optional().nullable(),
 });
 export type FuelInput = z.infer<typeof fuelSchema>;
 
@@ -78,7 +100,7 @@ const ANOMALY_THRESHOLD = Number(process.env.FUEL_ANOMALY_THRESHOLD ?? "0.75");
 
 export async function createFuelTransactionAction(input: FuelInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, [...FLEET_ROLES, Role.ACCOUNTS]);
+  requirePermission(session, FUEL_PERMISSIONS);
   const parsed = fuelSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
@@ -93,7 +115,6 @@ export async function createFuelTransactionAction(input: FuelInput): Promise<Act
   const distance = data.odometerReading - previousOdometer;
   const totalAmount = Math.round(data.litres * data.ratePerLitre * 100) / 100;
   const efficiency = fuelEfficiencyKmpl(distance, data.litres);
-  const costPerKm = fuelCostPerKm(totalAmount, distance);
 
   const pastTxns = await prisma.fuelTransaction.findMany({
     where: { vehicleId: data.vehicleId },
@@ -123,24 +144,22 @@ export async function createFuelTransactionAction(input: FuelInput): Promise<Act
         previousOdometerReading: previousOdometer,
         distanceTravelled: distance,
         efficiencyKmpl: efficiency,
-        costPerKm,
         isAnomaly,
         anomalyNote,
-        paymentMethod: data.paymentMethod || null,
-        remarks: data.remarks || null,
       },
     });
     await tx.vehicle.update({ where: { id: data.vehicleId }, data: { currentOdometer: data.odometerReading } });
     return created;
   });
 
-  await audit({ userId: session.sub, action: "CREATE", module: "fuel", recordId: txn.id, newValue: txn });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "FuelTransaction", entityId: txn.id, newValue: txn });
 
   if (isAnomaly) {
     await notify({
-      role: Role.TRANSPORT_MANAGER,
+      companyId: session.companyId,
+      roleName: ROLES.TRANSPORT_MANAGER,
       type: "fuel_efficiency_drop",
-      severity: AlertSeverity.WARNING,
+      severity: NotificationSeverity.WARNING,
       title: "Unusual fuel consumption detected",
       message: `${vehicle.registrationNumber}: ${anomalyNote}`,
       entityType: "FuelTransaction",
@@ -163,31 +182,28 @@ const tripSchema = z.object({
   material: z.string().optional().nullable(),
   quantity: z.coerce.number().positive().optional().nullable(),
   unit: z.string().optional().nullable(),
-  numberOfTrips: z.coerce.number().int().positive().default(1),
   freight: z.coerce.number().min(0).default(0),
   loadingCost: z.coerce.number().min(0).default(0),
   unloadingCost: z.coerce.number().min(0).default(0),
   toll: z.coerce.number().min(0).default(0),
-  parking: z.coerce.number().min(0).default(0),
-  otherCharges: z.coerce.number().min(0).default(0),
 });
 export type TripInput = z.infer<typeof tripSchema>;
 
 export async function createTransportTripAction(input: TripInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, [...FLEET_ROLES, Role.ACCOUNTS]);
+  requirePermission(session, TRANSPORT_PERMISSIONS);
   const parsed = tripSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
 
-  const totalCost = Math.round((data.freight + data.loadingCost + data.unloadingCost + data.toll + data.parking + data.otherCharges) * 100) / 100;
-  const costPerKg = data.quantity ? transportCostPerKg(totalCost, data.quantity) : null;
+  const totalCost = Math.round((data.freight + data.loadingCost + data.unloadingCost + data.toll) * 100) / 100;
 
   const trip = await withSequenceRetry(() =>
     prisma.$transaction(async (tx) => {
       const tripNumber = await nextSequenceNumber(tx.transportTrip, "TRP");
       return tx.transportTrip.create({
         data: {
+          companyId: session.companyId,
           tripNumber,
           date: data.date,
           vehicleId: data.vehicleId,
@@ -198,22 +214,17 @@ export async function createTransportTripAction(input: TripInput): Promise<Actio
           material: data.material || null,
           quantity: data.quantity ?? null,
           unit: data.unit || null,
-          numberOfTrips: data.numberOfTrips,
           freight: data.freight,
           loadingCost: data.loadingCost,
           unloadingCost: data.unloadingCost,
           toll: data.toll,
-          parking: data.parking,
-          otherCharges: data.otherCharges,
           totalCost,
-          costPerKg,
         },
       });
     })
   );
 
-  await audit({ userId: session.sub, action: "CREATE", module: "transportation", recordId: trip.id, newValue: trip });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "TransportTrip", entityId: trip.id, newValue: trip });
   revalidatePath("/transportation");
   return { success: true, id: trip.id };
 }
-

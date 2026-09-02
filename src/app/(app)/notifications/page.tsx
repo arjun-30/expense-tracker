@@ -9,7 +9,7 @@ export default async function NotificationsPage() {
   if (!allowed) return <AccessRestricted />;
 
   const notifications = await prisma.notification.findMany({
-    where: { OR: [{ userId: session.sub }, { role: session.role }] },
+    where: { companyId: session.companyId, OR: [{ userId: session.sub }, { roleId: { in: session.roleIds } }] },
     orderBy: { createdAt: "desc" },
     take: 100,
   });

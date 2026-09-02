@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createPurchaseOrderAction } from "@/lib/actions/purchases";
 
 const itemSchema = z.object({
-  sparePartId: z.string().optional(),
+  consumableId: z.string().optional(),
   description: z.string().min(1, "Required"),
   quantity: z.number().positive(),
   unitPrice: z.number().min(0),
@@ -33,7 +33,7 @@ export function PurchaseOrderFormDialog({
   spareParts,
 }: {
   vendors: { id: string; name: string }[];
-  spareParts: { id: string; name: string; purchasePrice: number }[];
+  spareParts: { id: string; name: string; unitCost: number }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -49,7 +49,7 @@ export function PurchaseOrderFormDialog({
     const result = await createPurchaseOrderAction({
       vendorId: values.vendorId,
       expectedDelivery: values.expectedDelivery ? new Date(values.expectedDelivery) : null,
-      items: values.items.map((it) => ({ ...it, sparePartId: it.sparePartId || null })),
+      items: values.items.map((it) => ({ ...it, consumableId: it.consumableId || null })),
     });
     setSubmitting(false);
     if (!result.success) {
@@ -99,7 +99,7 @@ export function PurchaseOrderFormDialog({
                 <div className="col-span-4 space-y-1">
                   <Controller
                     control={control}
-                    name={`items.${index}.sparePartId`}
+                    name={`items.${index}.consumableId`}
                     render={({ field: f }) => (
                       <Select
                         onValueChange={(v) => {
@@ -107,7 +107,7 @@ export function PurchaseOrderFormDialog({
                           const spare = spareParts.find((s) => s.id === v);
                           if (spare) {
                             setValue(`items.${index}.description`, spare.name);
-                            setValue(`items.${index}.unitPrice`, spare.purchasePrice);
+                            setValue(`items.${index}.unitPrice`, spare.unitCost);
                           }
                         }}
                         value={f.value}

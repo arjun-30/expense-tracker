@@ -33,7 +33,7 @@ export function InventoryAdjustDialog({ sparePartId, sparePartName }: { sparePar
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
     const result = await adjustInventoryAction({
-      sparePartId,
+      consumableId: sparePartId,
       type: values.type as never,
       quantity: values.quantity,
       notes: values.notes || null,

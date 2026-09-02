@@ -20,7 +20,7 @@ export async function markNotificationReadAction(id: string): Promise<ActionResu
 export async function markAllNotificationsReadAction(): Promise<ActionResult> {
   const session = await requireSession();
   await prisma.notification.updateMany({
-    where: { isRead: false, OR: [{ userId: session.sub }, { role: session.role }] },
+    where: { isRead: false, OR: [{ userId: session.sub }, { roleId: { in: session.roleIds } }] },
     data: { isRead: true },
   });
   revalidatePath("/notifications");

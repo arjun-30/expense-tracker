@@ -9,7 +9,8 @@ import { SparePartFormDialog } from "@/components/maintenance/spare-part-form-di
 import { InventoryAdjustDialog } from "@/components/maintenance/inventory-adjust-dialog";
 import { getSpareReliability } from "@/lib/services/spare-intelligence";
 import { formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 import { AlertTriangle } from "lucide-react";
 
 const RELIABILITY_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
@@ -22,13 +23,12 @@ export default async function SparePartsPage() {
   const { session, allowed } = await guardModule("spareParts");
   if (!allowed) return <AccessRestricted />;
 
-  const [spares, vendors, reliability] = await Promise.all([
-    prisma.sparePart.findMany({ include: { supplier: true }, orderBy: { name: "asc" } }),
-    prisma.vendor.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    getSpareReliability(),
+  const [spares, reliability] = await Promise.all([
+    prisma.consumable.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
+    getSpareReliability(session.companyId),
   ]);
 
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.MAINTENANCE_MANAGER, Role.PURCHASE_MANAGER];
+  const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER, ROLES.PURCHASE_MANAGER);
   const lowStockCount = spares.filter((s) => Number(s.currentStock) < Number(s.minimumStock)).length;
 
   return (
@@ -36,7 +36,7 @@ export default async function SparePartsPage() {
       <PageHeader
         title="Spare Parts"
         description="Inventory, issue workflow and reliability analytics"
-        action={canManage.includes(session.role) ? <SparePartFormDialog vendors={vendors} /> : undefined}
+        action={canManage ? <SparePartFormDialog /> : undefined}
       />
 
       {lowStockCount > 0 && (
@@ -53,12 +53,11 @@ export default async function SparePartsPage() {
               <TableRow>
                 <TableHead>Part #</TableHead>
                 <TableHead>Name</TableHead>
-                <TableHead>Supplier</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
                 <TableHead className="text-right">Min</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
                 <TableHead>Status</TableHead>
-                {canManage.includes(session.role) && <TableHead />}
+                {canManage && <TableHead />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -68,21 +67,20 @@ export default async function SparePartsPage() {
                   <TableRow key={s.id} className={low ? "bg-status-warning/10" : undefined}>
                     <TableCell className="font-medium">{s.partNumber}</TableCell>
                     <TableCell>{s.name}</TableCell>
-                    <TableCell>{s.supplier?.name ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{Number(s.currentStock)}</TableCell>
                     <TableCell className="text-right tabular-nums">{Number(s.minimumStock)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatINR(Number(s.purchasePrice))}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatINR(Number(s.unitCost))}</TableCell>
                     <TableCell>
                       {low ? <Badge variant="secondary" className="gap-1 text-status-warning"><AlertTriangle className="h-3 w-3" /> Low Stock</Badge> : <Badge variant="outline">OK</Badge>}
                     </TableCell>
-                    {canManage.includes(session.role) && (
+                    {canManage && (
                       <TableCell><InventoryAdjustDialog sparePartId={s.id} sparePartName={s.name} /></TableCell>
                     )}
                   </TableRow>
                 );
               })}
               {spares.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">No spare parts yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No spare parts yet.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -105,7 +103,7 @@ export default async function SparePartsPage() {
             </TableHeader>
             <TableBody>
               {reliability.map((r) => (
-                <TableRow key={r.sparePartId}>
+                <TableRow key={r.consumableId}>
                   <TableCell className="font-medium">{r.name}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.replacements}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.averageLifespanDays ? `${r.averageLifespanDays.toFixed(0)} days` : "—"}</TableCell>

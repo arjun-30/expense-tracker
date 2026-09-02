@@ -48,8 +48,6 @@ export function FuelFormDialog({ vehicles, drivers }: { vehicles: { id: string; 
       fuelType: values.fuelType as never,
       fuelStation: values.fuelStation || null,
       date: new Date(values.date),
-      paymentMethod: null,
-      remarks: null,
     });
     setSubmitting(false);
     if (!result.success) { toast.error(result.error ?? "Something went wrong"); return; }

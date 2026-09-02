@@ -1,38 +1,64 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { budgetVariance, budgetUtilizationRatio } from "@/lib/services/calculations";
+import { ExpenseStatus } from "@/generated/prisma/enums";
 
-export async function getBudgetsWithActuals() {
+const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
+
+export interface BudgetAllocationScope {
+  departmentId: string | null;
+  categoryId: string | null;
+  costCenterId: string | null;
+}
+
+/** Sum of finalized expenses matching one budget allocation's scope within its period. */
+export async function actualSpendForAllocation(
+  companyId: string,
+  scope: BudgetAllocationScope,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<number> {
+  const actual = await prisma.expense.aggregate({
+    where: {
+      companyId,
+      status: { in: FINALIZED },
+      expenseDate: { gte: periodStart, lte: periodEnd },
+      ...(scope.departmentId ? { departmentId: scope.departmentId } : {}),
+      ...(scope.categoryId ? { categoryId: scope.categoryId } : {}),
+      ...(scope.costCenterId ? { costCenterId: scope.costCenterId } : {}),
+    },
+    _sum: { totalAmount: true },
+  });
+  return Number(actual._sum?.totalAmount ?? 0);
+}
+
+export async function getBudgetsWithActuals(companyId: string) {
   const budgets = await prisma.budget.findMany({
-    include: { department: true, category: true, costCenter: true },
+    where: { companyId },
+    include: { allocations: { include: { department: true, category: true, costCenter: true } } },
     orderBy: { periodStart: "desc" },
   });
 
   const rows = [];
   for (const b of budgets) {
-    const actual = await prisma.expense.aggregate({
-      where: {
-        status: { in: ["APPROVED", "PAID"] },
-        date: { gte: b.periodStart, lte: b.periodEnd },
-        ...(b.departmentId ? { departmentId: b.departmentId } : {}),
-        ...(b.categoryId ? { categoryId: b.categoryId } : {}),
-        ...(b.costCenterId ? { costCenterId: b.costCenterId } : {}),
-      },
-      _sum: { totalAmount: true },
-    });
-    const actualAmount = Number(actual._sum?.totalAmount ?? 0);
-    const amount = Number(b.amount);
+    let actual = 0;
+    for (const alloc of b.allocations) {
+      actual += await actualSpendForAllocation(companyId, alloc, b.periodStart, b.periodEnd);
+    }
+    const amount = Number(b.totalAmount);
+    const first = b.allocations[0];
+    const scope = first?.department?.name ?? first?.category?.name ?? first?.costCenter?.name ?? "Company-wide";
     rows.push({
       id: b.id,
       name: b.name,
-      scope: b.department?.name ?? b.category?.name ?? b.costCenter?.name ?? "Company-wide",
+      scope,
       period: b.period,
       periodStart: b.periodStart,
       periodEnd: b.periodEnd,
       amount,
-      actual: actualAmount,
-      variance: budgetVariance(amount, actualAmount),
-      utilization: budgetUtilizationRatio(amount, actualAmount),
+      actual,
+      variance: budgetVariance(amount, actual),
+      utilization: budgetUtilizationRatio(amount, actual),
     });
   }
   return rows;

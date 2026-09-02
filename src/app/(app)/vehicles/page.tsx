@@ -6,7 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { VehicleFormDialog } from "@/components/fleet/vehicle-form-dialog";
 import { formatNumber } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 function daysUntil(date: Date): number {
   return Math.round((date.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
@@ -27,20 +28,19 @@ export default async function VehiclesPage() {
   const { session, allowed } = await guardModule("vehicles");
   if (!allowed) return <AccessRestricted />;
 
-  const [vehicles, drivers, departments] = await Promise.all([
-    prisma.vehicle.findMany({ include: { driver: true, department: true }, orderBy: { registrationNumber: "asc" } }),
-    prisma.driver.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+  const [vehicles, departments] = await Promise.all([
+    prisma.vehicle.findMany({ where: { companyId: session.companyId }, include: { documents: true, department: true }, orderBy: { registrationNumber: "asc" } }),
+    prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
   ]);
 
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.TRANSPORT_MANAGER];
+  const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER);
 
   return (
     <div>
       <PageHeader
         title="Vehicles"
         description="Vehicle registry, documents and operating status"
-        action={canManage.includes(session.role) ? <VehicleFormDialog drivers={drivers} departments={departments} /> : undefined}
+        action={canManage ? <VehicleFormDialog departments={departments} /> : undefined}
       />
       <div className="rounded-lg border bg-card">
         <Table>
@@ -48,7 +48,6 @@ export default async function VehiclesPage() {
             <TableRow>
               <TableHead>Registration #</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead>Driver</TableHead>
               <TableHead>Department</TableHead>
               <TableHead className="text-right">Odometer (km)</TableHead>
               <TableHead>Documents</TableHead>
@@ -56,25 +55,29 @@ export default async function VehiclesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vehicles.map((v) => (
-              <TableRow key={v.id}>
-                <TableCell className="font-medium">{v.registrationNumber}</TableCell>
-                <TableCell>{v.vehicleType}{v.manufacturer ? ` — ${v.manufacturer} ${v.model ?? ""}` : ""}</TableCell>
-                <TableCell>{v.driver?.name ?? "—"}</TableCell>
-                <TableCell>{v.department?.name ?? "—"}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatNumber(Number(v.currentOdometer))}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    <ExpiryBadge label="Ins" date={v.insuranceExpiry} />
-                    <ExpiryBadge label="Poll" date={v.pollutionExpiry} />
-                    <ExpiryBadge label="Fit" date={v.fitnessExpiry} />
-                  </div>
-                </TableCell>
-                <TableCell><Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status.replace("_", " ")}</Badge></TableCell>
-              </TableRow>
-            ))}
+            {vehicles.map((v) => {
+              const insurance = v.documents.find((d) => d.documentType === "INSURANCE")?.validUntil ?? null;
+              const pollution = v.documents.find((d) => d.documentType === "POLLUTION")?.validUntil ?? null;
+              const fitness = v.documents.find((d) => d.documentType === "FITNESS")?.validUntil ?? null;
+              return (
+                <TableRow key={v.id}>
+                  <TableCell className="font-medium">{v.registrationNumber}</TableCell>
+                  <TableCell>{v.vehicleType}{v.manufacturer ? ` — ${v.manufacturer} ${v.model ?? ""}` : ""}</TableCell>
+                  <TableCell>{v.department?.name ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatNumber(Number(v.currentOdometer))}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      <ExpiryBadge label="Ins" date={insurance} />
+                      <ExpiryBadge label="Poll" date={pollution} />
+                      <ExpiryBadge label="Fit" date={fitness} />
+                    </div>
+                  </TableCell>
+                  <TableCell><Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status.replace("_", " ")}</Badge></TableCell>
+                </TableRow>
+              );
+            })}
             {vehicles.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No vehicles yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No vehicles yet.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

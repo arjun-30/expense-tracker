@@ -1,4 +1,9 @@
 // Manufacturing Expense & Cost Management System — data model
+// ERP full-schema expansion (44 tables): Foundation / Finance / Operations /
+// Procurement / Management. See prisma/SCHEMA_MIGRATION_NOTES.md for the full
+// rationale behind every rename/replace/drop decision, and
+// prisma/OPEN_DECISIONS.md for the human decisions this schema implements.
+//
 // Prisma 7 SQL setup: no `url` here — see prisma.config.ts for the datasource URL.
 
 generator client {
@@ -10,98 +15,213 @@ datasource db {
   provider = "postgresql"
 }
 
-// ───────────────────────── Identity / RBAC ─────────────────────────
+// ───────────────────────── Foundation: company / RBAC ─────────────────────────
 
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  ACCOUNTS
-  PURCHASE_MANAGER
-  MAINTENANCE_MANAGER
-  TRANSPORT_MANAGER
-  EMPLOYEE
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(200)
+  legalName String?  @map("legal_name") @db.VarChar(200)
+  gstNumber String?  @unique @map("gst_number") @db.VarChar(20)
+  pan       String?  @db.VarChar(15)
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  roles             Role[]
+  departments       Department[]
+  costCenters       CostCenter[]
+  users             User[]
+  expenseCategories ExpenseCategory[]
+  vendors           Vendor[]
+  expenses          Expense[]
+  payments          Payment[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  vehicles          Vehicle[]
+  drivers           Driver[]
+  transporters      Transporter[]
+  transportTrips    TransportTrip[]
+  machines          Machine[]
+  consumables       Consumable[]
+  purchaseRequests  PurchaseRequest[]
+  purchaseOrders    PurchaseOrder[]
+  budgets           Budget[]
+  reportJobs        ReportJob[]
+  notificationRules NotificationRule[]
+  approvalRules     ApprovalRule[]
+
+  @@map("companies")
 }
 
-model User {
-  id                  String    @id @default(cuid())
-  name                String
-  email               String    @unique
-  passwordHash        String
-  role                Role
-  departmentId        String?
-  department          Department? @relation(fields: [departmentId], references: [id])
-  phone               String?
-  isActive            Boolean   @default(true)
-  failedLoginAttempts Int       @default(0)
-  lockedUntil         DateTime?
-  passwordResetToken  String?   @unique
-  passwordResetExpiry DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+model Role {
+  id           String   @id @default(uuid())
+  companyId    String   @map("company_id")
+  company      Company  @relation(fields: [companyId], references: [id])
+  name         String   @db.VarChar(100)
+  description  String?
+  isSystemRole Boolean  @default(false) @map("is_system_role")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  expensesSubmitted   Expense[]            @relation("ExpenseEmployee")
-  expensesApproved    Expense[]            @relation("ExpenseApprover")
-  expenseAttachments  ExpenseAttachment[]
-  expenseApprovals    ExpenseApproval[]
-  purchaseOrders      PurchaseOrder[]
-  payments            Payment[]
-  maintenanceRecords  MaintenanceRecord[]
-  spareIssued         MaintenanceSpare[]   @relation("SpareIssuedBy")
-  spareReceived       MaintenanceSpare[]   @relation("SpareReceivedBy")
-  inventoryPerformed  InventoryTransaction[] @relation("InventoryPerformedBy")
-  inventoryReceived   InventoryTransaction[] @relation("InventoryReceivedBy")
-  budgetsCreated      Budget[]
-  notifications       Notification[]
-  auditLogs           AuditLog[]
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+  approvalRules   ApprovalRule[]
+  notifications   Notification[]
 
-  @@index([role])
-  @@index([departmentId])
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  code        String  @unique @db.VarChar(100)
+  module      String  @db.VarChar(50)
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+// Explicit join model (not implicit m-n) so a role's permission grant carries
+// its own timestamp. `user_roles` follows the same pattern below, which is
+// what allows a single user to hold more than one role at once.
+model RolePermission {
+  roleId       String     @map("role_id")
+  role         Role       @relation(fields: [roleId], references: [id])
+  permissionId String     @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  grantedAt    DateTime   @default(now()) @map("granted_at")
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
 }
 
 model Department {
-  id        String       @id @default(cuid())
-  name      String       @unique
-  code      String       @unique
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String   @db.VarChar(150)
+  code      String   @db.VarChar(30)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  users       User[]
-  costCenters CostCenter[]
-  expenses    Expense[]
-  vehicles    Vehicle[]
-  machines    Machine[]
-  budgets     Budget[]
+  users             User[]
+  costCenters       CostCenter[]
+  expenses          Expense[]
+  vehicles          Vehicle[]
+  machines          Machine[]
+  budgetAllocations BudgetAllocation[]
+  consumableUsages  ConsumableUsage[]
+  purchaseRequests  PurchaseRequest[]
+
+  @@unique([companyId, code])
+  @@map("departments")
 }
 
 model CostCenter {
-  id           String      @id @default(cuid())
-  name         String
-  code         String      @unique
-  departmentId String?
+  id           String      @id @default(uuid())
+  companyId    String      @map("company_id")
+  company      Company     @relation(fields: [companyId], references: [id])
+  departmentId String?     @map("department_id")
   department   Department? @relation(fields: [departmentId], references: [id])
-  isActive     Boolean     @default(true)
-  createdAt    DateTime    @default(now())
+  name         String      @db.VarChar(150)
+  code         String      @db.VarChar(30)
+  isActive     Boolean     @default(true) @map("is_active")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
 
-  expenses Expense[]
-  budgets  Budget[]
+  expenses          Expense[]
+  budgetAllocations BudgetAllocation[]
+  consumableUsages  ConsumableUsage[]
+
+  @@unique([companyId, code])
+  @@map("cost_centers")
 }
 
-// ───────────────────────── Expenses ─────────────────────────
+model User {
+  id                  String      @id @default(uuid())
+  companyId           String      @map("company_id")
+  company             Company     @relation(fields: [companyId], references: [id])
+  departmentId        String?     @map("department_id")
+  department          Department? @relation(fields: [departmentId], references: [id])
+  name                String      @db.VarChar(150)
+  email               String      @unique @db.VarChar(200)
+  phone               String?     @db.VarChar(20)
+  passwordHash        String      @map("password_hash")
+  failedLoginAttempts Int         @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?   @map("locked_until")
+  passwordResetToken  String?     @unique @map("password_reset_token")
+  passwordResetExpiry DateTime?   @map("password_reset_expiry")
+  isActive            Boolean     @default(true) @map("is_active")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
 
-model ExpenseCategory {
-  id       String            @id @default(cuid())
-  name     String
-  code     String            @unique
-  parentId String?
-  parent   ExpenseCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children ExpenseCategory[] @relation("CategoryTree")
-  isActive Boolean           @default(true)
+  userRoles                 UserRole[]
+  sessions                  Session[]
+  expensesSubmitted         Expense[]                 @relation("ExpenseEmployee")
+  expenseAttachments        ExpenseAttachment[]
+  expenseApprovals          ExpenseApproval[]
+  payments                  Payment[]
+  notifications             Notification[]
+  auditLogs                 AuditLog[]
+  maintenanceRequests       MaintenanceRequest[]
+  maintenanceRecords        MaintenanceRecord[]
+  maintenanceSparesIssued   MaintenanceSpare[]        @relation("MaintenanceSpareIssuedBy")
+  maintenanceSparesReceived MaintenanceSpare[]        @relation("MaintenanceSpareReceivedBy")
+  stockMovementsPerformed   ConsumableStockMovement[]
+  purchaseRequests          PurchaseRequest[]
+  purchaseOrders            PurchaseOrder[]
+  goodsReceipts             GoodsReceipt[]
+  budgetsCreated            Budget[]
+  reportJobs                ReportJob[]
 
-  expenses          Expense[] @relation("ExpenseCategory")
-  expensesSub       Expense[] @relation("ExpenseSubcategory")
-  budgets           Budget[]
+  @@index([companyId])
+  @@index([email])
+  @@map("users")
+}
 
-  @@index([parentId])
+model UserRole {
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  roleId     String   @map("role_id")
+  role       Role     @relation(fields: [roleId], references: [id])
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  ipAddress String?   @map("ip_address") @db.Inet
+  userAgent String?   @map("user_agent")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ───────────────────────── Finance: expenses / vendors / payments ─────────────────────────
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  NEFT
+  RTGS
+  CHEQUE
+  CREDIT
+
+  @@map("payment_method")
 }
 
 enum ExpenseStatus {
@@ -112,81 +232,8 @@ enum ExpenseStatus {
   REJECTED
   PAID
   CANCELLED
-}
 
-enum PaymentMethod {
-  CASH
-  UPI
-  BANK_TRANSFER
-  NEFT
-  RTGS
-  CHEQUE
-  CREDIT
-}
-
-enum PaymentStatus {
-  PENDING
-  PARTIALLY_PAID
-  PAID
-  CANCELLED
-}
-
-model Expense {
-  id              String        @id @default(cuid())
-  expenseNumber   String        @unique
-  date            DateTime
-  categoryId      String
-  category        ExpenseCategory @relation("ExpenseCategory", fields: [categoryId], references: [id])
-  subcategoryId   String?
-  subcategory     ExpenseCategory? @relation("ExpenseSubcategory", fields: [subcategoryId], references: [id])
-  amount          Decimal       @db.Decimal(14, 2)
-  taxAmount       Decimal       @default(0) @db.Decimal(14, 2)
-  discountAmount  Decimal       @default(0) @db.Decimal(14, 2)
-  totalAmount     Decimal       @db.Decimal(14, 2)
-  vendorId        String?
-  vendor          Vendor?       @relation(fields: [vendorId], references: [id])
-  departmentId    String
-  department      Department    @relation(fields: [departmentId], references: [id])
-  costCenterId    String?
-  costCenter      CostCenter?   @relation(fields: [costCenterId], references: [id])
-  employeeId      String
-  employee        User          @relation("ExpenseEmployee", fields: [employeeId], references: [id])
-  paymentMethod   PaymentMethod?
-  paymentStatus   PaymentStatus @default(PENDING)
-  description     String?
-  referenceNumber String?
-  status          ExpenseStatus @default(DRAFT)
-  approvedById    String?
-  approvedBy      User?         @relation("ExpenseApprover", fields: [approvedById], references: [id])
-  approvedAt      DateTime?
-  remarks         String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  attachments ExpenseAttachment[]
-  approvals   ExpenseApproval[]
-
-  @@index([status])
-  @@index([date])
-  @@index([departmentId])
-  @@index([categoryId])
-  @@index([employeeId])
-  @@index([vendorId])
-}
-
-model ExpenseAttachment {
-  id           String   @id @default(cuid())
-  expenseId    String
-  expense      Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  fileName     String
-  fileUrl      String
-  fileType     String
-  fileSize     Int
-  uploadedById String
-  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
-  uploadedAt   DateTime @default(now())
-
-  @@index([expenseId])
+  @@map("expense_status")
 }
 
 enum ApprovalAction {
@@ -197,196 +244,268 @@ enum ApprovalAction {
   REJECTED
   PAID
   CANCELLED
+
+  @@map("approval_action")
 }
 
-model ExpenseApproval {
-  id         String         @id @default(cuid())
-  expenseId  String
-  expense    Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  action     ApprovalAction
-  actedById  String
-  actedBy    User           @relation(fields: [actedById], references: [id])
-  actedAt    DateTime       @default(now())
-  remarks    String?
-  fromStatus ExpenseStatus
-  toStatus   ExpenseStatus
+enum PaymentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
 
-  @@index([expenseId])
+  @@map("payment_status")
 }
 
-// ───────────────────────── Vendors / Purchasing ─────────────────────────
+// Confirmed max 2 levels in practice (category -> subcategory), so the old
+// self-referencing tree is split into two flat tables instead of a
+// parent-pointer tree (see OPEN_DECISIONS.md #3).
+model ExpenseCategory {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String   @db.VarChar(150)
+  code      String   @db.VarChar(30)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-enum VendorStatus {
-  ACTIVE
-  INACTIVE
+  subcategories     ExpenseSubcategory[]
+  expenses          Expense[]
+  approvalRules     ApprovalRule[]
+  budgetAllocations BudgetAllocation[]
+
+  @@unique([companyId, code])
+  @@map("expense_categories")
+}
+
+model ExpenseSubcategory {
+  id         String          @id @default(uuid())
+  categoryId String          @map("category_id")
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
+  name       String          @db.VarChar(150)
+  code       String          @db.VarChar(30)
+  isActive   Boolean         @default(true) @map("is_active")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  expenses Expense[]
+
+  @@unique([categoryId, code])
+  @@map("expense_subcategories")
 }
 
 model Vendor {
-  id             String       @id @default(cuid())
-  name           String
-  contactPerson  String?
-  phone          String?
-  email          String?
-  address        String?
-  gstNumber      String?
-  pan            String?
-  category       String?
-  paymentTerms   String?
-  bankDetails    Json?
-  status         VendorStatus @default(ACTIVE)
-  createdAt      DateTime     @default(now())
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  company       Company  @relation(fields: [companyId], references: [id])
+  name          String   @db.VarChar(200)
+  contactPerson String?  @map("contact_person") @db.VarChar(150)
+  phone         String?  @db.VarChar(20)
+  email         String?  @db.VarChar(200)
+  address       String?
+  gstNumber     String?  @map("gst_number") @db.VarChar(20)
+  pan           String?  @db.VarChar(15)
+  category      String?  @db.VarChar(50)
+  paymentTerms  String?  @map("payment_terms") @db.VarChar(100)
+  bankDetails   Json?    @map("bank_details")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   expenses       Expense[]
   purchaseOrders PurchaseOrder[]
-  invoices       Invoice[]
   payments       Payment[]
-  spareParts     SparePart[]
-  transportTrips TransportTrip[]
 
-  @@index([status])
+  @@index([companyId])
+  @@map("vendors")
 }
 
-enum PurchaseOrderStatus {
-  REQUESTED
-  ORDERED
-  PARTIALLY_RECEIVED
-  RECEIVED
-  CANCELLED
-}
+model Expense {
+  id              String              @id @default(uuid())
+  companyId       String              @map("company_id")
+  company         Company             @relation(fields: [companyId], references: [id])
+  expenseNumber   String              @unique @map("expense_number") @db.VarChar(30)
+  expenseDate     DateTime            @map("expense_date") @db.Date
+  categoryId      String              @map("category_id")
+  category        ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  subcategoryId   String?             @map("subcategory_id")
+  subcategory     ExpenseSubcategory? @relation(fields: [subcategoryId], references: [id])
+  departmentId    String              @map("department_id")
+  department      Department          @relation(fields: [departmentId], references: [id])
+  costCenterId    String?             @map("cost_center_id")
+  costCenter      CostCenter?         @relation(fields: [costCenterId], references: [id])
+  vendorId        String?             @map("vendor_id")
+  vendor          Vendor?             @relation(fields: [vendorId], references: [id])
+  employeeId      String              @map("employee_id")
+  employee        User                @relation("ExpenseEmployee", fields: [employeeId], references: [id])
+  amount          Decimal             @db.Decimal(14, 2)
+  taxAmount       Decimal             @default(0) @map("tax_amount") @db.Decimal(14, 2)
+  discountAmount  Decimal             @default(0) @map("discount_amount") @db.Decimal(14, 2)
+  totalAmount     Decimal             @map("total_amount") @db.Decimal(14, 2)
+  paymentMethod   PaymentMethod?      @map("payment_method")
+  status          ExpenseStatus       @default(DRAFT)
+  description     String?
+  referenceNumber String?             @map("reference_number") @db.VarChar(100)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
 
-model PurchaseOrder {
-  id                String              @id @default(cuid())
-  poNumber          String              @unique
-  vendorId          String
-  vendor            Vendor              @relation(fields: [vendorId], references: [id])
-  status            PurchaseOrderStatus @default(REQUESTED)
-  expectedDelivery  DateTime?
-  actualDelivery    DateTime?
-  totalAmount       Decimal             @db.Decimal(14, 2)
-  createdById       String
-  createdBy         User                @relation(fields: [createdById], references: [id])
-  createdAt         DateTime            @default(now())
+  attachments ExpenseAttachment[]
+  approvals   ExpenseApproval[]
+  payments    Payment[]
 
-  items     PurchaseOrderItem[]
-  invoices  Invoice[]
-
-  @@index([status])
+  @@index([companyId, expenseDate])
+  @@index([departmentId, costCenterId, status])
   @@index([vendorId])
+  @@map("expenses")
 }
 
-model PurchaseOrderItem {
-  id                String        @id @default(cuid())
-  purchaseOrderId   String
-  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  sparePartId       String?
-  sparePart         SparePart?    @relation(fields: [sparePartId], references: [id])
-  description       String
-  quantity          Decimal       @db.Decimal(12, 2)
-  unitPrice         Decimal       @db.Decimal(14, 2)
-  gstPercent        Decimal       @default(0) @db.Decimal(5, 2)
-  total             Decimal       @db.Decimal(14, 2)
-  receivedQuantity  Decimal       @default(0) @db.Decimal(12, 2)
+model ExpenseAttachment {
+  id            String   @id @default(uuid())
+  expenseId     String   @map("expense_id")
+  expense       Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileName      String   @map("file_name") @db.VarChar(255)
+  storageKey    String   @map("storage_key")
+  fileType      String?  @map("file_type") @db.VarChar(50)
+  fileSizeBytes BigInt?  @map("file_size_bytes")
+  uploadedById  String   @map("uploaded_by")
+  uploadedBy    User     @relation(fields: [uploadedById], references: [id])
+  uploadedAt    DateTime @default(now()) @map("uploaded_at")
 
-  @@index([purchaseOrderId])
+  @@index([expenseId])
+  @@map("expense_attachments")
 }
 
-enum InvoiceStatus {
-  UNPAID
-  PARTIALLY_PAID
-  PAID
-  DISPUTED
-  CANCELLED
+model ApprovalRule {
+  id                  String           @id @default(uuid())
+  companyId           String           @map("company_id")
+  company             Company          @relation(fields: [companyId], references: [id])
+  name                String           @db.VarChar(150)
+  appliesToCategoryId String?          @map("applies_to_category_id")
+  appliesToCategory   ExpenseCategory? @relation(fields: [appliesToCategoryId], references: [id])
+  minAmount           Decimal          @default(0) @map("min_amount") @db.Decimal(14, 2)
+  maxAmount           Decimal?         @map("max_amount") @db.Decimal(14, 2)
+  approvalLevel       Int              @map("approval_level")
+  approverRoleId      String           @map("approver_role_id")
+  approverRole        Role             @relation(fields: [approverRoleId], references: [id])
+  isActive            Boolean          @default(true) @map("is_active")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  @@map("approval_rules")
 }
 
-model Invoice {
-  id              String        @id @default(cuid())
-  invoiceNumber   String
-  vendorId        String
-  vendor          Vendor        @relation(fields: [vendorId], references: [id])
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  amount          Decimal       @db.Decimal(14, 2)
-  taxAmount       Decimal       @default(0) @db.Decimal(14, 2)
-  totalAmount     Decimal       @db.Decimal(14, 2)
-  invoiceDate     DateTime
-  dueDate         DateTime?
-  status          InvoiceStatus @default(UNPAID)
-  filePath        String?
-  createdAt       DateTime      @default(now())
+model ExpenseApproval {
+  id            String         @id @default(uuid())
+  expenseId     String         @map("expense_id")
+  expense       Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  approvalLevel Int            @map("approval_level")
+  action        ApprovalAction
+  actedById     String         @map("acted_by")
+  actedBy       User           @relation(fields: [actedById], references: [id])
+  actedAt       DateTime       @default(now()) @map("acted_at")
+  remarks       String?
+  fromStatus    ExpenseStatus? @map("from_status")
+  toStatus      ExpenseStatus? @map("to_status")
 
-  payments Payment[]
-
-  @@unique([vendorId, invoiceNumber])
-  @@index([status])
+  @@index([expenseId, approvalLevel])
+  @@map("expense_approvals")
 }
 
+// `payments` links directly to `expenses` and `vendors` only — there is no
+// invoice step in between. See OPEN_DECISIONS.md #5: invoicing was dropped
+// entirely rather than kept as a parallel, disconnected feature.
 model Payment {
-  id              String        @id @default(cuid())
-  paymentNumber   String        @unique
-  vendorId        String
+  id              String        @id @default(uuid())
+  companyId       String        @map("company_id")
+  company         Company       @relation(fields: [companyId], references: [id])
+  paymentNumber   String        @unique @map("payment_number") @db.VarChar(30)
+  expenseId       String?       @map("expense_id")
+  expense         Expense?      @relation(fields: [expenseId], references: [id])
+  vendorId        String        @map("vendor_id")
   vendor          Vendor        @relation(fields: [vendorId], references: [id])
-  invoiceId       String?
-  invoice         Invoice?      @relation(fields: [invoiceId], references: [id])
   amount          Decimal       @db.Decimal(14, 2)
-  paymentDate     DateTime
+  paymentDate     DateTime      @map("payment_date") @db.Date
   method          PaymentMethod
-  referenceNumber String?
-  bank            String?
+  referenceNumber String?       @map("reference_number") @db.VarChar(100)
   status          PaymentStatus @default(PENDING)
-  remarks         String?
-  createdById     String
+  createdById     String        @map("created_by")
   createdBy       User          @relation(fields: [createdById], references: [id])
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  @@index([status])
-  @@index([vendorId])
+  @@index([expenseId, paymentDate])
+  @@map("payments")
 }
 
-// ───────────────────────── Vehicles / Fuel / Transportation ─────────────────────────
+// ───────────────────────── Notifications / audit ─────────────────────────
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+
+  @@map("notification_severity")
+}
+
+model Notification {
+  id         String               @id @default(uuid())
+  companyId  String               @map("company_id")
+  company    Company              @relation(fields: [companyId], references: [id])
+  userId     String?              @map("user_id")
+  user       User?                @relation(fields: [userId], references: [id])
+  roleId     String?              @map("role_id")
+  role       Role?                @relation(fields: [roleId], references: [id])
+  type       String               @db.VarChar(50)
+  severity   NotificationSeverity @default(INFO)
+  title      String               @db.VarChar(200)
+  message    String
+  entityType String?              @map("entity_type") @db.VarChar(50)
+  entityId   String?              @map("entity_id")
+  isRead     Boolean              @default(false) @map("is_read")
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  companyId  String   @map("company_id")
+  company    Company  @relation(fields: [companyId], references: [id])
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   @db.VarChar(50)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  ipAddress  String?  @map("ip_address") @db.Inet
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId, createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────── Operations: vehicles / fuel / transport ─────────────────────────
 
 enum VehicleStatus {
   ACTIVE
   UNDER_MAINTENANCE
   INACTIVE
   SOLD
+
+  @@map("vehicle_status")
 }
 
-model Vehicle {
-  id                  String        @id @default(cuid())
-  registrationNumber  String        @unique
-  vehicleType         String
-  manufacturer        String?
-  model               String?
-  year                Int?
-  driverId            String?
-  driver              Driver?       @relation(fields: [driverId], references: [id])
-  departmentId        String?
-  department          Department?   @relation(fields: [departmentId], references: [id])
-  purchaseDate        DateTime?
-  insuranceExpiry     DateTime?
-  pollutionExpiry     DateTime?
-  fitnessExpiry       DateTime?
-  currentOdometer     Decimal       @default(0) @db.Decimal(12, 2)
-  status              VehicleStatus @default(ACTIVE)
-  createdAt           DateTime      @default(now())
+enum VehicleDocumentType {
+  INSURANCE
+  FITNESS
+  POLLUTION
+  REGISTRATION
+  OTHER
 
-  fuelTransactions FuelTransaction[]
-  trips            TransportTrip[]
-
-  @@index([status])
-}
-
-model Driver {
-  id             String    @id @default(cuid())
-  name           String
-  phone          String?
-  licenseNumber  String?
-  licenseExpiry  DateTime?
-  isActive       Boolean   @default(true)
-
-  vehicles         Vehicle[]
-  fuelTransactions FuelTransaction[]
-  trips            TransportTrip[]
+  @@map("vehicle_document_type")
 }
 
 enum FuelType {
@@ -394,69 +513,148 @@ enum FuelType {
   PETROL
   CNG
   OTHER
+
+  @@map("fuel_type")
+}
+
+model Vehicle {
+  id                 String        @id @default(uuid())
+  companyId          String        @map("company_id")
+  company            Company       @relation(fields: [companyId], references: [id])
+  departmentId       String?       @map("department_id")
+  department         Department?   @relation(fields: [departmentId], references: [id])
+  registrationNumber String        @unique @map("registration_number") @db.VarChar(30)
+  vehicleType        String?       @map("vehicle_type") @db.VarChar(50)
+  manufacturer       String?       @db.VarChar(100)
+  model              String?       @db.VarChar(100)
+  year               Int?          @db.SmallInt
+  currentOdometer    Decimal       @default(0) @map("current_odometer") @db.Decimal(12, 2)
+  status             VehicleStatus @default(ACTIVE)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  documents        VehicleDocument[]
+  fuelTransactions FuelTransaction[]
+  trips            TransportTrip[]
+
+  @@index([status])
+  @@map("vehicles")
+}
+
+// Drivers are recorded per fuel_transaction and per transport_trip, not as a
+// standing vehicle assignment — confirmed not needed (OPEN_DECISIONS.md #8).
+model Driver {
+  id            String    @id @default(uuid())
+  companyId     String    @map("company_id")
+  company       Company   @relation(fields: [companyId], references: [id])
+  name          String    @db.VarChar(150)
+  phone         String?   @db.VarChar(20)
+  licenseNumber String?   @map("license_number") @db.VarChar(50)
+  licenseExpiry DateTime? @map("license_expiry") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  fuelTransactions FuelTransaction[]
+  trips            TransportTrip[]
+
+  @@map("drivers")
+}
+
+// Replaces the old three scalar expiry fields on Vehicle (insurance/fitness/
+// pollution) with one row per document type/expiry, so any number of
+// document types can be tracked (OPEN_DECISIONS.md #8).
+model VehicleDocument {
+  id           String              @id @default(uuid())
+  vehicleId    String              @map("vehicle_id")
+  vehicle      Vehicle             @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  documentType VehicleDocumentType @map("document_type")
+  storageKey   String              @map("storage_key")
+  validFrom    DateTime?           @map("valid_from") @db.Date
+  validUntil   DateTime?           @map("valid_until") @db.Date
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  @@index([vehicleId])
+  @@index([validUntil])
+  @@map("vehicle_documents")
 }
 
 model FuelTransaction {
-  id                      String   @id @default(cuid())
-  vehicleId               String
+  id                      String   @id @default(uuid())
+  vehicleId               String   @map("vehicle_id")
   vehicle                 Vehicle  @relation(fields: [vehicleId], references: [id])
-  driverId                String?
+  driverId                String?  @map("driver_id")
   driver                  Driver?  @relation(fields: [driverId], references: [id])
-  date                    DateTime
-  fuelType                FuelType
-  fuelStation             String?
+  date                    DateTime @db.Date
+  fuelType                FuelType @map("fuel_type")
+  fuelStation             String?  @map("fuel_station") @db.VarChar(150)
   litres                  Decimal  @db.Decimal(10, 2)
-  ratePerLitre            Decimal  @db.Decimal(10, 2)
-  totalAmount             Decimal  @db.Decimal(14, 2)
-  odometerReading         Decimal  @db.Decimal(12, 2)
-  previousOdometerReading Decimal  @db.Decimal(12, 2)
-  distanceTravelled       Decimal  @db.Decimal(12, 2)
-  efficiencyKmpl          Decimal? @db.Decimal(10, 3)
-  costPerKm               Decimal? @db.Decimal(10, 3)
-  isAnomaly               Boolean  @default(false)
-  anomalyNote             String?
-  paymentMethod           PaymentMethod?
-  billUrl                 String?
-  remarks                 String?
-  createdAt               DateTime @default(now())
+  ratePerLitre            Decimal  @map("rate_per_litre") @db.Decimal(10, 2)
+  totalAmount             Decimal  @map("total_amount") @db.Decimal(14, 2)
+  odometerReading         Decimal  @map("odometer_reading") @db.Decimal(12, 2)
+  previousOdometerReading Decimal  @map("previous_odometer_reading") @db.Decimal(12, 2)
+  distanceTravelled       Decimal? @map("distance_travelled") @db.Decimal(12, 2)
+  efficiencyKmpl          Decimal? @map("efficiency_kmpl") @db.Decimal(10, 3)
+  isAnomaly               Boolean  @default(false) @map("is_anomaly")
+  anomalyNote             String?  @map("anomaly_note")
+  billStorageKey          String?  @map("bill_storage_key")
+  createdAt               DateTime @default(now()) @map("created_at")
 
-  @@index([vehicleId])
-  @@index([date])
+  @@index([vehicleId, date])
+  @@index([vehicleId, odometerReading])
+  @@map("fuel_transactions")
+}
+
+// Transporters are kept fully separate from vendors: a transporter moves
+// goods (freight/trip economics), a vendor supplies goods/services billed
+// via expenses/POs — different lifecycles and different fields, and the
+// project owner confirmed this split is intentional, not an oversight
+// (OPEN_DECISIONS.md #9). Do not fold this back into Vendor.
+model Transporter {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String   @db.VarChar(200)
+  phone     String?  @db.VarChar(20)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  trips TransportTrip[]
+
+  @@map("transporters")
 }
 
 model TransportTrip {
-  id             String        @id @default(cuid())
-  tripNumber     String        @unique
-  date           DateTime
-  vehicleId      String
-  vehicle        Vehicle       @relation(fields: [vehicleId], references: [id])
-  transporterId  String?
-  transporter    Vendor?       @relation(fields: [transporterId], references: [id])
-  driverId       String?
-  driver         Driver?       @relation(fields: [driverId], references: [id])
-  source         String
-  destination    String
-  material       String?
-  quantity       Decimal?      @db.Decimal(12, 2)
-  unit           String?
-  numberOfTrips  Int           @default(1)
-  freight        Decimal       @default(0) @db.Decimal(14, 2)
-  loadingCost    Decimal       @default(0) @db.Decimal(14, 2)
-  unloadingCost  Decimal       @default(0) @db.Decimal(14, 2)
-  toll           Decimal       @default(0) @db.Decimal(14, 2)
-  parking        Decimal       @default(0) @db.Decimal(14, 2)
-  otherCharges   Decimal       @default(0) @db.Decimal(14, 2)
-  totalCost      Decimal       @db.Decimal(14, 2)
-  costPerKg      Decimal?      @db.Decimal(10, 3)
-  invoiceUrl     String?
-  paymentStatus  PaymentStatus @default(PENDING)
-  createdAt      DateTime      @default(now())
+  id            String        @id @default(uuid())
+  companyId     String        @map("company_id")
+  company       Company       @relation(fields: [companyId], references: [id])
+  tripNumber    String        @unique @map("trip_number") @db.VarChar(30)
+  date          DateTime      @db.Date
+  vehicleId     String        @map("vehicle_id")
+  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
+  driverId      String?       @map("driver_id")
+  driver        Driver?       @relation(fields: [driverId], references: [id])
+  transporterId String?       @map("transporter_id")
+  transporter   Transporter?  @relation(fields: [transporterId], references: [id])
+  source        String        @db.VarChar(200)
+  destination   String        @db.VarChar(200)
+  material      String?       @db.VarChar(150)
+  quantity      Decimal?      @db.Decimal(12, 3)
+  unit          String?       @db.VarChar(20)
+  freight       Decimal       @default(0) @db.Decimal(14, 2)
+  loadingCost   Decimal       @default(0) @map("loading_cost") @db.Decimal(14, 2)
+  unloadingCost Decimal       @default(0) @map("unloading_cost") @db.Decimal(14, 2)
+  toll          Decimal       @default(0) @db.Decimal(14, 2)
+  totalCost     Decimal       @map("total_cost") @db.Decimal(14, 2)
+  paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
+  createdAt     DateTime      @default(now()) @map("created_at")
 
-  @@index([vehicleId])
-  @@index([date])
+  @@index([date, vehicleId])
+  @@map("transport_trips")
 }
 
-// ───────────────────────── Machinery / Maintenance / Spares ─────────────────────────
+// ───────────────────────── Operations: machinery / maintenance ─────────────────────────
 
 enum MachineStatus {
   RUNNING
@@ -464,30 +662,27 @@ enum MachineStatus {
   UNDER_MAINTENANCE
   BREAKDOWN
   RETIRED
+
+  @@map("machine_status")
 }
 
-model Machine {
-  id                     String        @id @default(cuid())
-  machineCode            String        @unique
-  name                   String
-  category               String?
-  manufacturer           String?
-  model                  String?
-  serialNumber           String?
-  purchaseDate           DateTime?
-  purchasePrice          Decimal?      @db.Decimal(14, 2)
-  location               String?
-  departmentId           String?
-  department             Department?   @relation(fields: [departmentId], references: [id])
-  warrantyExpiry         DateTime?
-  expectedLifespanMonths Int?
-  status                 MachineStatus @default(RUNNING)
-  createdAt              DateTime      @default(now())
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 
-  maintenanceRecords MaintenanceRecord[]
-  compatibleSpares   SparePartMachine[]
+  @@map("maintenance_priority")
+}
 
-  @@index([status])
+enum MaintenanceRequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  CANCELLED
+
+  @@map("maintenance_request_status")
 }
 
 enum MaintenanceType {
@@ -496,254 +691,443 @@ enum MaintenanceType {
   BREAKDOWN
   EMERGENCY
   SCHEDULED_SERVICE
+
+  @@map("maintenance_type")
+}
+
+model Machine {
+  id           String        @id @default(uuid())
+  companyId    String        @map("company_id")
+  company      Company       @relation(fields: [companyId], references: [id])
+  departmentId String?       @map("department_id")
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  machineCode  String        @unique @map("machine_code") @db.VarChar(30)
+  name         String        @db.VarChar(150)
+  manufacturer String?       @db.VarChar(100)
+  model        String?       @db.VarChar(100)
+  serialNumber String?       @map("serial_number") @db.VarChar(100)
+  purchaseDate DateTime?     @map("purchase_date") @db.Date
+  purchaseCost Decimal?      @map("purchase_cost") @db.Decimal(14, 2)
+  location     String?       @db.VarChar(150)
+  status       MachineStatus @default(RUNNING)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  documents            MachineDocument[]
+  maintenanceRequests  MaintenanceRequest[]
+  maintenanceRecords   MaintenanceRecord[]
+  maintenanceSchedules MaintenanceSchedule[]
+  consumableUsages     ConsumableUsage[]
+
+  @@index([status])
+  @@map("machines")
+}
+
+model MachineDocument {
+  id           String   @id @default(uuid())
+  machineId    String   @map("machine_id")
+  machine      Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  documentType String?  @map("document_type") @db.VarChar(50)
+  storageKey   String   @map("storage_key")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("machine_documents")
+}
+
+// Upstream stage that formally splits "someone reported a problem" from "the
+// work that was actually done" (maintenance_records, below).
+model MaintenanceRequest {
+  id                 String                   @id @default(uuid())
+  machineId          String                   @map("machine_id")
+  machine            Machine                  @relation(fields: [machineId], references: [id])
+  requestedById      String                   @map("requested_by")
+  requestedBy        User                     @relation(fields: [requestedById], references: [id])
+  problemDescription String                   @map("problem_description")
+  priority           MaintenancePriority
+  status             MaintenanceRequestStatus @default(OPEN)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+
+  maintenanceRecords MaintenanceRecord[]
+
+  @@index([machineId, status])
+  @@map("maintenance_requests")
 }
 
 model MaintenanceRecord {
-  id                  String          @id @default(cuid())
-  ticketNumber        String          @unique
-  machineId           String
-  machine             Machine         @relation(fields: [machineId], references: [id])
-  date                DateTime
-  maintenanceType     MaintenanceType
-  problem             String?
-  diagnosis           String?
-  technician          String?
-  labourCost          Decimal         @default(0) @db.Decimal(14, 2)
-  sparePartsCost      Decimal         @default(0) @db.Decimal(14, 2)
-  otherCost           Decimal         @default(0) @db.Decimal(14, 2)
-  totalCost           Decimal         @db.Decimal(14, 2)
-  downtimeMinutes     Int?
-  startTime           DateTime?
-  endTime             DateTime?
-  invoiceUrl          String?
-  remarks             String?
-  nextMaintenanceDate DateTime?
-  status              String          @default("OPEN")
-  createdById         String
-  createdBy           User            @relation(fields: [createdById], references: [id])
-  createdAt           DateTime        @default(now())
+  id                   String              @id @default(uuid())
+  maintenanceRequestId String?             @map("maintenance_request_id")
+  maintenanceRequest   MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
+  machineId            String              @map("machine_id")
+  machine              Machine             @relation(fields: [machineId], references: [id])
+  ticketNumber         String              @unique @map("ticket_number") @db.VarChar(30)
+  maintenanceType      MaintenanceType     @map("maintenance_type")
+  diagnosis            String?
+  technician           String?             @db.VarChar(150)
+  labourCost           Decimal             @default(0) @map("labour_cost") @db.Decimal(14, 2)
+  consumablesCost      Decimal             @default(0) @map("consumables_cost") @db.Decimal(14, 2)
+  otherCost            Decimal             @default(0) @map("other_cost") @db.Decimal(14, 2)
+  totalCost            Decimal             @map("total_cost") @db.Decimal(14, 2)
+  downtimeMinutes      Int?                @map("downtime_minutes")
+  startTime            DateTime?           @map("start_time")
+  endTime              DateTime?           @map("end_time")
+  createdById          String              @map("created_by")
+  createdBy            User                @relation(fields: [createdById], references: [id])
+  createdAt            DateTime            @default(now()) @map("created_at")
 
   spares MaintenanceSpare[]
 
-  @@index([machineId])
-  @@index([date])
+  @@index([machineId, startTime])
+  @@map("maintenance_records")
 }
 
+model MaintenanceSchedule {
+  id            String   @id @default(uuid())
+  machineId     String   @map("machine_id")
+  machine       Machine  @relation(fields: [machineId], references: [id])
+  scheduleName  String?  @map("schedule_name") @db.VarChar(150)
+  frequencyDays Int?     @map("frequency_days")
+  nextDueDate   DateTime @map("next_due_date") @db.Date
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([nextDueDate, isActive])
+  @@map("maintenance_schedules")
+}
+
+// Kept as-is: not part of the new 44-table design, but not silently dropped
+// either — no decision was made to remove it (unlike SparePartMachine /
+// ProductionOrder / ProductionExpense / PrintingExpense, which were
+// explicitly confirmed unused and removed). FK renamed from sparePartId to
+// consumableId to follow the SparePart -> Consumable rename.
 model MaintenanceSpare {
-  id                  String            @id @default(cuid())
-  maintenanceRecordId String
+  id                  String            @id @default(uuid())
+  maintenanceRecordId String            @map("maintenance_record_id")
   maintenanceRecord   MaintenanceRecord @relation(fields: [maintenanceRecordId], references: [id], onDelete: Cascade)
-  sparePartId         String
-  sparePart           SparePart         @relation(fields: [sparePartId], references: [id])
-  quantity            Decimal           @db.Decimal(12, 2)
-  unitCost            Decimal           @db.Decimal(14, 2)
-  totalCost           Decimal           @db.Decimal(14, 2)
-  issuedById          String
-  issuedBy            User              @relation("SpareIssuedBy", fields: [issuedById], references: [id])
-  receivedById        String?
-  receivedBy          User?             @relation("SpareReceivedBy", fields: [receivedById], references: [id])
-  issuedAt            DateTime          @default(now())
+  consumableId        String            @map("consumable_id")
+  consumable          Consumable        @relation(fields: [consumableId], references: [id])
+  quantity            Decimal           @db.Decimal(12, 3)
+  unitCost            Decimal           @map("unit_cost") @db.Decimal(14, 2)
+  totalCost           Decimal           @map("total_cost") @db.Decimal(14, 2)
+  issuedById          String            @map("issued_by")
+  issuedBy            User              @relation("MaintenanceSpareIssuedBy", fields: [issuedById], references: [id])
+  receivedById        String?           @map("received_by")
+  receivedBy          User?             @relation("MaintenanceSpareReceivedBy", fields: [receivedById], references: [id])
+  issuedAt            DateTime          @default(now()) @map("issued_at")
 
-  @@index([sparePartId])
+  @@index([consumableId])
   @@index([maintenanceRecordId])
+  @@map("maintenance_spares")
 }
 
-enum SparePartStatus {
-  ACTIVE
-  DISCONTINUED
-}
-
-model SparePart {
-  id              String          @id @default(cuid())
-  partNumber      String          @unique
-  name            String
-  category        String?
-  description     String?
-  supplierId      String?
-  supplier        Vendor?         @relation(fields: [supplierId], references: [id])
-  unit            String          @default("pcs")
-  purchasePrice   Decimal         @default(0) @db.Decimal(14, 2)
-  currentStock    Decimal         @default(0) @db.Decimal(12, 2)
-  minimumStock    Decimal         @default(0) @db.Decimal(12, 2)
-  maximumStock    Decimal?        @db.Decimal(12, 2)
-  storageLocation String?
-  status          SparePartStatus @default(ACTIVE)
-  createdAt       DateTime        @default(now())
-
-  compatibleMachines  SparePartMachine[]
-  maintenanceSpares   MaintenanceSpare[]
-  inventoryTxns       InventoryTransaction[]
-  purchaseOrderItems  PurchaseOrderItem[]
-
-  @@index([status])
-}
-
-model SparePartMachine {
-  sparePartId String
-  sparePart   SparePart @relation(fields: [sparePartId], references: [id], onDelete: Cascade)
-  machineId   String
-  machine     Machine   @relation(fields: [machineId], references: [id], onDelete: Cascade)
-
-  @@id([sparePartId, machineId])
-}
+// ───────────────────────── Operations: consumables / inventory ─────────────────────────
 
 enum InventoryTxnType {
   PURCHASE
   ISSUE
   RETURN
   ADJUSTMENT
-  REPLACEMENT
+  TRANSFER
   DAMAGED
   SCRAP
+
+  @@map("inventory_txn_type")
 }
 
-model InventoryTransaction {
-  id                  String            @id @default(cuid())
-  sparePartId         String
-  sparePart           SparePart         @relation(fields: [sparePartId], references: [id])
-  type                InventoryTxnType
-  quantity            Decimal           @db.Decimal(12, 2)
-  machineId           String?
-  purchaseOrderId     String?
-  unitCost            Decimal?          @db.Decimal(14, 2)
-  totalCost           Decimal?          @db.Decimal(14, 2)
-  performedById       String
-  performedBy         User              @relation("InventoryPerformedBy", fields: [performedById], references: [id])
-  receivedById        String?
-  receivedBy          User?             @relation("InventoryReceivedBy", fields: [receivedById], references: [id])
-  notes               String?
-  createdAt           DateTime          @default(now())
+// Renamed from the old `SparePart` model. No default-supplier FK — supplier
+// is only ever recorded per purchase order now.
+model Consumable {
+  id              String   @id @default(uuid())
+  companyId       String   @map("company_id")
+  company         Company  @relation(fields: [companyId], references: [id])
+  partNumber      String   @unique @map("part_number") @db.VarChar(50)
+  name            String   @db.VarChar(150)
+  category        String?  @db.VarChar(50)
+  unit            String   @default("pcs") @db.VarChar(20)
+  unitCost        Decimal  @default(0) @map("unit_cost") @db.Decimal(14, 2)
+  currentStock    Decimal  @default(0) @map("current_stock") @db.Decimal(12, 3)
+  minimumStock    Decimal  @default(0) @map("minimum_stock") @db.Decimal(12, 3)
+  maximumStock    Decimal? @map("maximum_stock") @db.Decimal(12, 3)
+  storageLocation String?  @map("storage_location") @db.VarChar(150)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  @@index([sparePartId])
-  @@index([type])
-  @@index([createdAt])
+  stockMovements       ConsumableStockMovement[]
+  usages               ConsumableUsage[]
+  purchaseRequestItems PurchaseRequestItem[]
+  purchaseOrderItems   PurchaseOrderItem[]
+  maintenanceSpares    MaintenanceSpare[]
+
+  @@map("consumables")
 }
 
-// ───────────────────────── Budgets ─────────────────────────
+// Renamed from `InventoryTransaction`. `quantity` is signed (+inbound /
+// -outbound) per the new design's convention. Append-only: no `updatedAt`.
+model ConsumableStockMovement {
+  id            String           @id @default(uuid())
+  consumableId  String           @map("consumable_id")
+  consumable    Consumable       @relation(fields: [consumableId], references: [id])
+  movementType  InventoryTxnType @map("movement_type")
+  quantity      Decimal          @db.Decimal(12, 3)
+  unitCost      Decimal?         @map("unit_cost") @db.Decimal(14, 2)
+  totalCost     Decimal?         @map("total_cost") @db.Decimal(14, 2)
+  referenceType String?          @map("reference_type") @db.VarChar(50)
+  referenceId   String?          @map("reference_id")
+  performedById String           @map("performed_by")
+  performedBy   User             @relation(fields: [performedById], references: [id])
+  movementDate  DateTime         @default(now()) @map("movement_date")
+  notes         String?
+
+  usages            ConsumableUsage[]
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([consumableId, movementDate])
+  @@map("consumable_stock_movements")
+}
+
+model ConsumableUsage {
+  id              String                  @id @default(uuid())
+  consumableId    String                  @map("consumable_id")
+  consumable      Consumable              @relation(fields: [consumableId], references: [id])
+  machineId       String?                 @map("machine_id")
+  machine         Machine?                @relation(fields: [machineId], references: [id])
+  departmentId    String?                 @map("department_id")
+  department      Department?             @relation(fields: [departmentId], references: [id])
+  costCenterId    String?                 @map("cost_center_id")
+  costCenter      CostCenter?             @relation(fields: [costCenterId], references: [id])
+  quantity        Decimal                 @db.Decimal(12, 3)
+  usageDate       DateTime                @map("usage_date") @db.Date
+  stockMovementId String                  @map("stock_movement_id")
+  stockMovement   ConsumableStockMovement @relation(fields: [stockMovementId], references: [id])
+
+  @@index([consumableId, usageDate])
+  @@map("consumable_usage")
+}
+
+// ───────────────────────── Procurement ─────────────────────────
+
+enum PurchaseRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CONVERTED
+  CANCELLED
+
+  @@map("purchase_request_status")
+}
+
+enum PurchaseOrderStatus {
+  REQUESTED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+
+  @@map("purchase_order_status")
+}
+
+model PurchaseRequest {
+  id            String                @id @default(uuid())
+  companyId     String                @map("company_id")
+  company       Company               @relation(fields: [companyId], references: [id])
+  requestNumber String                @unique @map("request_number") @db.VarChar(30)
+  requestedById String                @map("requested_by")
+  requestedBy   User                  @relation(fields: [requestedById], references: [id])
+  departmentId  String?               @map("department_id")
+  department    Department?           @relation(fields: [departmentId], references: [id])
+  status        PurchaseRequestStatus @default(DRAFT)
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  items          PurchaseRequestItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestItem {
+  id                 String          @id @default(uuid())
+  purchaseRequestId  String          @map("purchase_request_id")
+  purchaseRequest    PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  consumableId       String?         @map("consumable_id")
+  consumable         Consumable?     @relation(fields: [consumableId], references: [id])
+  description        String          @db.VarChar(255)
+  quantity           Decimal         @db.Decimal(12, 3)
+  estimatedUnitPrice Decimal?        @map("estimated_unit_price") @db.Decimal(14, 2)
+
+  @@map("purchase_request_items")
+}
+
+model PurchaseOrder {
+  id                String              @id @default(uuid())
+  companyId         String              @map("company_id")
+  company           Company             @relation(fields: [companyId], references: [id])
+  poNumber          String              @unique @map("po_number") @db.VarChar(30)
+  purchaseRequestId String?             @map("purchase_request_id")
+  purchaseRequest   PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id])
+  vendorId          String              @map("vendor_id")
+  vendor            Vendor              @relation(fields: [vendorId], references: [id])
+  status            PurchaseOrderStatus @default(REQUESTED)
+  expectedDelivery  DateTime?           @map("expected_delivery") @db.Date
+  totalAmount       Decimal             @map("total_amount") @db.Decimal(14, 2)
+  createdById       String              @map("created_by")
+  createdBy         User                @relation(fields: [createdById], references: [id])
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  items         PurchaseOrderItem[]
+  goodsReceipts GoodsReceipt[]
+
+  @@index([status])
+  @@index([vendorId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String        @map("purchase_order_id")
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  consumableId     String?       @map("consumable_id")
+  consumable       Consumable?   @relation(fields: [consumableId], references: [id])
+  description      String        @db.VarChar(255)
+  quantity         Decimal       @db.Decimal(12, 3)
+  unitPrice        Decimal       @map("unit_price") @db.Decimal(14, 2)
+  gstPercent       Decimal       @default(0) @map("gst_percent") @db.Decimal(5, 2)
+  total            Decimal       @db.Decimal(14, 2)
+  receivedQuantity Decimal       @default(0) @map("received_quantity") @db.Decimal(12, 3)
+
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id              String        @id @default(uuid())
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  receiptNumber   String        @unique @map("receipt_number") @db.VarChar(30)
+  receivedDate    DateTime      @map("received_date") @db.Date
+  receivedById    String        @map("received_by")
+  receivedBy      User          @relation(fields: [receivedById], references: [id])
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  items GoodsReceiptItem[]
+
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id                  String                   @id @default(uuid())
+  goodsReceiptId      String                   @map("goods_receipt_id")
+  goodsReceipt        GoodsReceipt             @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String                   @map("purchase_order_item_id")
+  purchaseOrderItem   PurchaseOrderItem        @relation(fields: [purchaseOrderItemId], references: [id])
+  quantityReceived    Decimal                  @map("quantity_received") @db.Decimal(12, 3)
+  stockMovementId     String?                  @map("stock_movement_id")
+  stockMovement       ConsumableStockMovement? @relation(fields: [stockMovementId], references: [id])
+
+  @@map("goods_receipt_items")
+}
+
+// ───────────────────────── Management: budgets / reports / rules ─────────────────────────
 
 enum BudgetPeriod {
   MONTHLY
   QUARTERLY
   YEARLY
+
+  @@map("budget_period")
 }
 
+enum ReportJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("report_job_status")
+}
+
+// Split into a parent budget (overall total) and one-or-more child
+// allocations (department/category/cost-center breakdown), per
+// OPEN_DECISIONS.md #11. Each existing seeded budget converts to exactly one
+// parent + one allocation.
 model Budget {
-  id           String       @id @default(cuid())
-  name         String
-  departmentId String?
-  department   Department?  @relation(fields: [departmentId], references: [id])
-  categoryId   String?
-  category     ExpenseCategory? @relation(fields: [categoryId], references: [id])
-  costCenterId String?
-  costCenter   CostCenter?  @relation(fields: [costCenterId], references: [id])
-  period       BudgetPeriod
-  periodStart  DateTime
-  periodEnd    DateTime
-  amount       Decimal      @db.Decimal(14, 2)
-  createdById  String
-  createdBy    User         @relation(fields: [createdById], references: [id])
-  createdAt    DateTime     @default(now())
+  id          String       @id @default(uuid())
+  companyId   String       @map("company_id")
+  company     Company      @relation(fields: [companyId], references: [id])
+  name        String       @db.VarChar(150)
+  period      BudgetPeriod
+  periodStart DateTime     @map("period_start") @db.Date
+  periodEnd   DateTime     @map("period_end") @db.Date
+  totalAmount Decimal      @map("total_amount") @db.Decimal(14, 2)
+  createdById String       @map("created_by")
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now()) @map("created_at")
 
-  @@index([departmentId])
-  @@index([categoryId])
-  @@index([periodStart, periodEnd])
+  allocations BudgetAllocation[]
+
+  @@map("budgets")
 }
 
-// ───────────────────────── Rules / Notifications / Audit ─────────────────────────
+model BudgetAllocation {
+  id              String           @id @default(uuid())
+  budgetId        String           @map("budget_id")
+  budget          Budget           @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  departmentId    String?          @map("department_id")
+  department      Department?      @relation(fields: [departmentId], references: [id])
+  categoryId      String?          @map("category_id")
+  category        ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  costCenterId    String?          @map("cost_center_id")
+  costCenter      CostCenter?      @relation(fields: [costCenterId], references: [id])
+  allocatedAmount Decimal          @map("allocated_amount") @db.Decimal(14, 2)
 
-enum AlertSeverity {
-  INFO
-  WARNING
-  CRITICAL
+  @@index([budgetId])
+  @@index([departmentId, categoryId, costCenterId])
+  @@map("budget_allocations")
 }
 
-model AlertRule {
-  id            String        @id @default(cuid())
-  key           String        @unique
-  name          String
-  description   String?
-  module        String?
-  conditionJson Json
-  severity      AlertSeverity
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+model ReportJob {
+  id               String          @id @default(uuid())
+  companyId        String          @map("company_id")
+  company          Company         @relation(fields: [companyId], references: [id])
+  requestedById    String          @map("requested_by")
+  requestedBy      User            @relation(fields: [requestedById], references: [id])
+  reportType       String          @map("report_type") @db.VarChar(50)
+  parameters       Json?
+  status           ReportJobStatus @default(QUEUED)
+  outputStorageKey String?         @map("output_storage_key")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  completedAt      DateTime?       @map("completed_at")
+
+  @@index([requestedById, status, createdAt])
+  @@map("report_jobs")
 }
 
-model Notification {
-  id         String        @id @default(cuid())
-  userId     String?
-  user       User?         @relation(fields: [userId], references: [id])
-  role       Role?
-  type       String
-  severity   AlertSeverity @default(INFO)
-  title      String
-  message    String
-  entityType String?
-  entityId   String?
-  isRead     Boolean       @default(false)
-  createdAt  DateTime      @default(now())
+model NotificationRule {
+  id            String               @id @default(uuid())
+  companyId     String               @map("company_id")
+  company       Company              @relation(fields: [companyId], references: [id])
+  key           String               @unique @db.VarChar(100)
+  name          String               @db.VarChar(150)
+  conditionJson Json                 @map("condition_json")
+  severity      NotificationSeverity
+  isActive      Boolean              @default(true) @map("is_active")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
 
-  @@index([userId, isRead])
-  @@index([role, isRead])
-  @@index([createdAt])
+  @@map("notification_rules")
 }
 
-model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  action    String
-  module    String
-  recordId  String?
-  oldValue  Json?
-  newValue  Json?
-  ipAddress String?
-  createdAt DateTime @default(now())
-
-  @@index([module])
-  @@index([recordId])
-  @@index([createdAt])
-}
-
+// Generic key/value config table — no design counterpart, kept as-is (not
+// part of the 44-table count, not touched by this cutover).
 model Settings {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   key       String   @unique
   value     Json
-  updatedAt DateTime @updatedAt
-}
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-// ───────────────────────── Deferred (schema-ready, no UI this phase) ─────────────────────────
-
-model ProductionOrder {
-  id          String    @id @default(cuid())
-  orderNumber String    @unique
-  product     String
-  quantity    Decimal   @db.Decimal(12, 2)
-  unit        String
-  status      String    @default("PLANNED")
-  startDate   DateTime?
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-
-  productionExpenses ProductionExpense[]
-  printingExpenses   PrintingExpense[]
-}
-
-model ProductionExpense {
-  id                String          @id @default(cuid())
-  productionOrderId String
-  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id])
-  type              String
-  amount            Decimal         @db.Decimal(14, 2)
-  date              DateTime        @default(now())
-}
-
-model PrintingExpense {
-  id                String           @id @default(cuid())
-  productionOrderId String?
-  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id])
-  category          String
-  amount            Decimal          @db.Decimal(14, 2)
-  date              DateTime         @default(now())
+  @@map("settings")
 }

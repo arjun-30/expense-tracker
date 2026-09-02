@@ -10,17 +10,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ReportExportButtons } from "@/components/reports/export-buttons";
 import { getExpenseReportRows } from "@/lib/services/reports";
 import { formatDate, formatINR } from "@/lib/format";
+import { parseFilterParam } from "@/lib/utils";
 
 export default async function ExpenseReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
-  const admin = isAdminRole(session.role);
+  const admin = isAdminRole(session);
 
   const sp = await searchParams;
-  const departmentFilter = admin ? sp.departmentId : undefined;
+  // "all" (the Select's default option) means "no filter" — omit it entirely
+  // rather than passing the literal string through to the report query.
+  const departmentFilter = admin ? parseFilterParam(sp.departmentId) : undefined;
   const [rows, departments] = await Promise.all([
     getExpenseReportRows({ from: sp.from, to: sp.to, departmentId: departmentFilter }, session),
-    admin ? prisma.department.findMany({ orderBy: { name: "asc" } }) : Promise.resolve([]),
+    admin ? prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }) : Promise.resolve([]),
   ]);
   const total = rows.reduce((s, r) => s + r.total, 0);
 

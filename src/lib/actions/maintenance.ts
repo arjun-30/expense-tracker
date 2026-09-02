@@ -4,63 +4,63 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { maintenanceTotalCost } from "@/lib/services/calculations";
 import { nextSequenceNumber, withSequenceRetry } from "@/lib/services/sequence";
 import { checkSpareReplacementRules, checkLowStock } from "@/lib/services/spare-intelligence";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-const MAINT_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.MAINTENANCE_MANAGER];
-const PURCHASE_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.PURCHASE_MANAGER];
+const MAINT_PERMISSIONS = ["maintenance.manage"];
+const MACHINERY_PERMISSIONS = ["machinery.manage"];
+const CONSUMABLE_PERMISSIONS = ["consumables.manage"];
 
 const machineSchema = z.object({
   machineCode: z.string().min(1),
   name: z.string().min(1),
-  category: z.string().optional().nullable(),
   manufacturer: z.string().optional().nullable(),
   model: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
-  purchasePrice: z.coerce.number().min(0).optional().nullable(),
+  purchaseCost: z.coerce.number().min(0).optional().nullable(),
 });
 export type MachineInput = z.infer<typeof machineSchema>;
 
 export async function createMachineAction(input: MachineInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, MAINT_ROLES);
+  requirePermission(session, MACHINERY_PERMISSIONS);
   const parsed = machineSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const machine = await prisma.machine.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "machinery", recordId: machine.id, newValue: machine });
+  const machine = await prisma.machine.create({ data: { ...parsed.data, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Machine", entityId: machine.id, newValue: machine });
   revalidatePath("/machinery");
   return { success: true, id: machine.id };
 }
 
-const sparePartSchema = z.object({
+const consumableSchema = z.object({
   partNumber: z.string().min(1),
   name: z.string().min(1),
   category: z.string().optional().nullable(),
-  supplierId: z.string().optional().nullable(),
   unit: z.string().default("pcs"),
-  purchasePrice: z.coerce.number().min(0),
+  unitCost: z.coerce.number().min(0),
   currentStock: z.coerce.number().min(0).default(0),
   minimumStock: z.coerce.number().min(0).default(0),
   maximumStock: z.coerce.number().min(0).optional().nullable(),
   storageLocation: z.string().optional().nullable(),
 });
-export type SparePartInput = z.infer<typeof sparePartSchema>;
+export type ConsumableInput = z.infer<typeof consumableSchema>;
 
-export async function createSparePartAction(input: SparePartInput): Promise<ActionResult> {
+// Renamed from createSparePartAction — consumables have no default-supplier
+// field any more, supplier is only ever recorded per purchase order.
+export async function createConsumableAction(input: ConsumableInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, [...MAINT_ROLES, Role.PURCHASE_MANAGER]);
-  const parsed = sparePartSchema.safeParse(input);
+  requirePermission(session, [...CONSUMABLE_PERMISSIONS, ...MAINT_PERMISSIONS]);
+  const parsed = consumableSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const spare = await prisma.sparePart.create({ data: parsed.data });
-  await audit({ userId: session.sub, action: "CREATE", module: "spareParts", recordId: spare.id, newValue: spare });
+  const consumable = await prisma.consumable.create({ data: { ...parsed.data, companyId: session.companyId } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Consumable", entityId: consumable.id, newValue: consumable });
   revalidatePath("/spare-parts");
-  return { success: true, id: spare.id };
+  return { success: true, id: consumable.id };
 }
 
 const maintenanceSchema = z.object({
@@ -73,87 +73,104 @@ const maintenanceSchema = z.object({
   labourCost: z.coerce.number().min(0).default(0),
   otherCost: z.coerce.number().min(0).default(0),
   downtimeMinutes: z.coerce.number().int().min(0).optional().nullable(),
-  nextMaintenanceDate: z.coerce.date().optional().nullable(),
-  remarks: z.string().optional().nullable(),
   spares: z.array(z.object({
-    sparePartId: z.string().min(1),
+    consumableId: z.string().min(1),
     quantity: z.coerce.number().positive(),
   })).default([]),
 });
 export type MaintenanceInput = z.infer<typeof maintenanceSchema>;
 
+function priorityForType(type: MaintenanceInput["maintenanceType"]): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
+  if (type === "EMERGENCY") return "CRITICAL";
+  if (type === "BREAKDOWN") return "HIGH";
+  return "MEDIUM";
+}
+
+// The new schema splits "someone reported a problem" (maintenance_requests)
+// from "the work that was actually done" (maintenance_records). This form is
+// still a single step, so it creates a matching, already-resolved
+// MaintenanceRequest alongside the MaintenanceRecord in the same transaction.
 export async function createMaintenanceRecordAction(input: MaintenanceInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, MAINT_ROLES);
+  requirePermission(session, MAINT_PERMISSIONS);
   const parsed = maintenanceSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
 
-  const spareParts = data.spares.length
-    ? await prisma.sparePart.findMany({ where: { id: { in: data.spares.map((s) => s.sparePartId) } } })
+  const consumables = data.spares.length
+    ? await prisma.consumable.findMany({ where: { id: { in: data.spares.map((s) => s.consumableId) } } })
     : [];
-  const spareMap = new Map(spareParts.map((s) => [s.id, s]));
+  const consumableMap = new Map(consumables.map((c) => [c.id, c]));
 
   for (const item of data.spares) {
-    const spare = spareMap.get(item.sparePartId);
-    if (!spare) return { success: false, error: "Spare part not found" };
-    if (Number(spare.currentStock) < item.quantity) {
-      return { success: false, error: `Insufficient stock for ${spare.name} (available: ${spare.currentStock})` };
+    const consumable = consumableMap.get(item.consumableId);
+    if (!consumable) return { success: false, error: "Spare part not found" };
+    if (Number(consumable.currentStock) < item.quantity) {
+      return { success: false, error: `Insufficient stock for ${consumable.name} (available: ${consumable.currentStock})` };
     }
   }
 
-  const sparePartsCost = data.spares.reduce((sum, item) => {
-    const spare = spareMap.get(item.sparePartId)!;
-    return sum + item.quantity * Number(spare.purchasePrice);
+  const consumablesCost = data.spares.reduce((sum, item) => {
+    const consumable = consumableMap.get(item.consumableId)!;
+    return sum + item.quantity * Number(consumable.unitCost);
   }, 0);
-  const totalCost = maintenanceTotalCost(data.labourCost, sparePartsCost, data.otherCost);
+  const totalCost = maintenanceTotalCost(data.labourCost, consumablesCost, data.otherCost);
 
   const record = await withSequenceRetry(() =>
     prisma.$transaction(async (tx) => {
+      const request = await tx.maintenanceRequest.create({
+        data: {
+          machineId: data.machineId,
+          requestedById: session.sub,
+          problemDescription: data.problem || "Maintenance performed",
+          priority: priorityForType(data.maintenanceType),
+          status: "RESOLVED",
+        },
+      });
+
       const ticketNumber = await nextSequenceNumber(tx.maintenanceRecord, "MNT");
       const created = await tx.maintenanceRecord.create({
         data: {
-          ticketNumber,
+          maintenanceRequestId: request.id,
           machineId: data.machineId,
-          date: data.date,
+          ticketNumber,
           maintenanceType: data.maintenanceType,
-          problem: data.problem || null,
           diagnosis: data.diagnosis || null,
           technician: data.technician || null,
           labourCost: data.labourCost,
-          sparePartsCost,
+          consumablesCost,
           otherCost: data.otherCost,
           totalCost,
           downtimeMinutes: data.downtimeMinutes ?? null,
-          nextMaintenanceDate: data.nextMaintenanceDate ?? null,
-          remarks: data.remarks || null,
+          startTime: data.date,
           createdById: session.sub,
         },
       });
 
       for (const item of data.spares) {
-        const spare = spareMap.get(item.sparePartId)!;
-        const unitCost = Number(spare.purchasePrice);
+        const consumable = consumableMap.get(item.consumableId)!;
+        const unitCost = Number(consumable.unitCost);
         await tx.maintenanceSpare.create({
           data: {
             maintenanceRecordId: created.id,
-            sparePartId: item.sparePartId,
+            consumableId: item.consumableId,
             quantity: item.quantity,
             unitCost,
             totalCost: item.quantity * unitCost,
             issuedById: session.sub,
           },
         });
-        await tx.sparePart.update({
-          where: { id: item.sparePartId },
+        await tx.consumable.update({
+          where: { id: item.consumableId },
           data: { currentStock: { decrement: item.quantity } },
         });
-        await tx.inventoryTransaction.create({
+        await tx.consumableStockMovement.create({
           data: {
-            sparePartId: item.sparePartId,
-            type: "ISSUE",
+            consumableId: item.consumableId,
+            movementType: "ISSUE",
             quantity: -item.quantity,
-            machineId: data.machineId,
+            referenceType: "maintenance_record",
+            referenceId: created.id,
             unitCost,
             totalCost: item.quantity * unitCost,
             performedById: session.sub,
@@ -169,11 +186,11 @@ export async function createMaintenanceRecordAction(input: MaintenanceInput): Pr
     })
   );
 
-  await audit({ userId: session.sub, action: "CREATE", module: "maintenance", recordId: record.id, newValue: record });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "MaintenanceRecord", entityId: record.id, newValue: record });
 
   for (const item of data.spares) {
-    await checkSpareReplacementRules({ sparePartId: item.sparePartId, machineId: data.machineId, issuedAt: data.date });
-    await checkLowStock(item.sparePartId);
+    await checkSpareReplacementRules({ companyId: session.companyId, consumableId: item.consumableId, machineId: data.machineId, issuedAt: data.date });
+    await checkLowStock(session.companyId, item.consumableId);
   }
 
   revalidatePath("/maintenance");
@@ -183,7 +200,7 @@ export async function createMaintenanceRecordAction(input: MaintenanceInput): Pr
 }
 
 const adjustmentSchema = z.object({
-  sparePartId: z.string().min(1),
+  consumableId: z.string().min(1),
   type: z.enum(["PURCHASE", "RETURN", "ADJUSTMENT", "DAMAGED", "SCRAP"]),
   quantity: z.coerce.number().positive(),
   notes: z.string().optional().nullable(),
@@ -192,26 +209,26 @@ export type InventoryAdjustmentInput = z.infer<typeof adjustmentSchema>;
 
 export async function adjustInventoryAction(input: InventoryAdjustmentInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, [...PURCHASE_ROLES, ...MAINT_ROLES]);
+  requirePermission(session, [...CONSUMABLE_PERMISSIONS, ...MAINT_PERMISSIONS]);
   const parsed = adjustmentSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
 
-  const spare = await prisma.sparePart.findUnique({ where: { id: data.sparePartId } });
-  if (!spare) return { success: false, error: "Spare part not found" };
+  const consumable = await prisma.consumable.findUnique({ where: { id: data.consumableId } });
+  if (!consumable) return { success: false, error: "Spare part not found" };
 
   const isDecrease = data.type === "DAMAGED" || data.type === "SCRAP";
   const delta = isDecrease ? -data.quantity : data.quantity;
-  if (isDecrease && Number(spare.currentStock) < data.quantity) {
-    return { success: false, error: `Cannot remove more than available stock (${spare.currentStock})` };
+  if (isDecrease && Number(consumable.currentStock) < data.quantity) {
+    return { success: false, error: `Cannot remove more than available stock (${consumable.currentStock})` };
   }
 
   await prisma.$transaction([
-    prisma.sparePart.update({ where: { id: data.sparePartId }, data: { currentStock: { increment: delta } } }),
-    prisma.inventoryTransaction.create({
+    prisma.consumable.update({ where: { id: data.consumableId }, data: { currentStock: { increment: delta } } }),
+    prisma.consumableStockMovement.create({
       data: {
-        sparePartId: data.sparePartId,
-        type: data.type,
+        consumableId: data.consumableId,
+        movementType: data.type,
         quantity: delta,
         notes: data.notes || null,
         performedById: session.sub,
@@ -219,8 +236,8 @@ export async function adjustInventoryAction(input: InventoryAdjustmentInput): Pr
     }),
   ]);
 
-  await audit({ userId: session.sub, action: `INVENTORY_${data.type}`, module: "spareParts", recordId: data.sparePartId, newValue: { quantity: delta } });
-  await checkLowStock(data.sparePartId);
+  await audit({ companyId: session.companyId, userId: session.sub, action: `INVENTORY_${data.type}`, entityType: "Consumable", entityId: data.consumableId, newValue: { quantity: delta } });
+  await checkLowStock(session.companyId, data.consumableId);
   revalidatePath("/spare-parts");
   return { success: true };
 }

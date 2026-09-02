@@ -7,11 +7,11 @@ import { getBudgetReportRows } from "@/lib/services/reports";
 import { formatDate, formatINR } from "@/lib/format";
 
 export default async function BudgetReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("reports");
+  const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
 
   const sp = await searchParams;
-  const rows = await getBudgetReportRows();
+  const rows = await getBudgetReportRows(session.companyId);
 
   return (
     <div>

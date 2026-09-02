@@ -12,7 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { DataTablePagination } from "@/components/data-table-pagination";
 import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
 import { formatDate, formatINR } from "@/lib/format";
-import { Role, type ExpenseStatus } from "@/generated/prisma/enums";
+import { ExpenseStatus } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
+import { parseFilterParam } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/select";
 
 const PAGE_SIZE = 20;
+const VALID_EXPENSE_STATUSES = new Set<string>(Object.values(ExpenseStatus));
 
 export default async function ExpensesPage({
   searchParams,
@@ -34,13 +38,17 @@ export default async function ExpensesPage({
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const q = sp.q?.trim();
-  const status = sp.status as ExpenseStatus | undefined;
-  const admin = isAdminRole(session.role);
+  // "all" (the Select's default option) and any other value that isn't a real
+  // ExpenseStatus mean "no filter" — never pass an invalid value to Prisma.
+  const rawStatus = parseFilterParam(sp.status);
+  const status = rawStatus && VALID_EXPENSE_STATUSES.has(rawStatus) ? (rawStatus as ExpenseStatus) : undefined;
+  const admin = isAdminRole(session);
   // Non-admins can only ever filter within what they're already scoped to see —
   // ignore any ?department= param they might pass to probe other departments.
-  const departmentId = admin ? sp.department : undefined;
+  const departmentId = admin ? parseFilterParam(sp.department) : undefined;
 
   const where = {
+    companyId: session.companyId,
     ...expenseVisibilityWhere(session),
     ...(status ? { status } : {}),
     ...(departmentId ? { departmentId } : {}),
@@ -59,12 +67,12 @@ export default async function ExpensesPage({
     prisma.expense.findMany({
       where,
       include: { category: true, department: true, vendor: true, employee: true },
-      orderBy: { date: "desc" },
+      orderBy: { expenseDate: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
     prisma.expense.count({ where }),
-    admin ? prisma.department.findMany({ orderBy: { name: "asc" } }) : Promise.resolve([]),
+    admin ? prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }) : Promise.resolve([]),
   ]);
 
   return (
@@ -74,7 +82,7 @@ export default async function ExpensesPage({
         description={
           admin
             ? "All company expenses across departments"
-            : session.role === Role.EMPLOYEE
+            : hasRole(session, ROLES.EMPLOYEE)
               ? "Your expenses"
               : "Expenses for your department"
         }
@@ -132,7 +140,7 @@ export default async function ExpensesPage({
                 <TableCell className="font-medium">
                   <Link href={`/expenses/${e.id}`} className="hover:underline">{e.expenseNumber}</Link>
                 </TableCell>
-                <TableCell>{formatDate(e.date)}</TableCell>
+                <TableCell>{formatDate(e.expenseDate)}</TableCell>
                 <TableCell>{e.category.name}</TableCell>
                 <TableCell>{e.vendor?.name ?? "—"}</TableCell>
                 <TableCell>{e.department.name}</TableCell>

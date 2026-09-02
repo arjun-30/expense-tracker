@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSession, type SessionPayload } from "@/lib/session";
 import { canAccessModule, isAdminRole } from "@/lib/rbac";
 import { toCsv, toExcel, toPdf, type ExportColumn } from "@/lib/services/export";
+import { parseFilterParam } from "@/lib/utils";
 import {
   getExpenseReportRows,
   getFuelReportRows,
@@ -21,20 +22,20 @@ const REPORT_COLUMNS: Record<string, ExportColumn[]> = {
   fuel: [
     { key: "date", header: "Date" }, { key: "vehicle", header: "Vehicle" }, { key: "driver", header: "Driver" },
     { key: "litres", header: "Litres" }, { key: "amount", header: "Amount" }, { key: "distance", header: "Distance (km)" },
-    { key: "efficiency", header: "Efficiency (km/L)" }, { key: "costPerKm", header: "Cost/km" }, { key: "anomaly", header: "Anomaly" },
+    { key: "efficiency", header: "Efficiency (km/L)" }, { key: "anomaly", header: "Anomaly" },
   ],
   transportation: [
     { key: "tripNumber", header: "Trip #" }, { key: "date", header: "Date" }, { key: "vehicle", header: "Vehicle" },
     { key: "transporter", header: "Transporter" }, { key: "source", header: "Source" }, { key: "destination", header: "Destination" },
-    { key: "quantity", header: "Quantity" }, { key: "unit", header: "Unit" }, { key: "totalCost", header: "Total Cost" }, { key: "costPerKg", header: "Cost/kg" },
+    { key: "quantity", header: "Quantity" }, { key: "unit", header: "Unit" }, { key: "totalCost", header: "Total Cost" },
   ],
   maintenance: [
     { key: "ticketNumber", header: "Ticket #" }, { key: "date", header: "Date" }, { key: "machine", header: "Machine" },
-    { key: "type", header: "Type" }, { key: "labourCost", header: "Labour" }, { key: "sparePartsCost", header: "Spares" },
+    { key: "type", header: "Type" }, { key: "labourCost", header: "Labour" }, { key: "consumablesCost", header: "Spares" },
     { key: "otherCost", header: "Other" }, { key: "totalCost", header: "Total" }, { key: "downtimeMinutes", header: "Downtime (min)" },
   ],
   spares: [
-    { key: "partNumber", header: "Part #" }, { key: "name", header: "Name" }, { key: "supplier", header: "Supplier" },
+    { key: "partNumber", header: "Part #" }, { key: "name", header: "Name" },
     { key: "currentStock", header: "Stock" }, { key: "minimumStock", header: "Min Stock" }, { key: "unitPrice", header: "Unit Price" }, { key: "status", header: "Status" },
   ],
   budgets: [
@@ -51,18 +52,18 @@ async function fetchRows(
 ) {
   switch (type) {
     case "expenses": return getExpenseReportRows(filters, session);
-    case "fuel": return getFuelReportRows(filters);
-    case "transportation": return getTransportationReportRows(filters);
-    case "maintenance": return getMaintenanceReportRows(filters);
-    case "spares": return getSpareReportRows();
-    case "budgets": return getBudgetReportRows();
+    case "fuel": return getFuelReportRows(session.companyId, filters);
+    case "transportation": return getTransportationReportRows(session.companyId, filters);
+    case "maintenance": return getMaintenanceReportRows(session.companyId, filters);
+    case "spares": return getSpareReportRows(session.companyId);
+    case "budgets": return getBudgetReportRows(session.companyId);
     default: return null;
   }
 }
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session || !canAccessModule(session.role, "reports")) {
+  if (!session || !canAccessModule(session, "reports")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -72,12 +73,15 @@ export async function GET(req: NextRequest) {
   const columns = REPORT_COLUMNS[type];
   if (!columns) return NextResponse.json({ error: "Unknown report type" }, { status: 400 });
 
+  // The export links on the report page forward its raw query string as-is,
+  // so a "no department filter" selection arrives here as the literal string
+  // "departmentId=all" too — treat it the same as missing/omitted.
   const rows = await fetchRows(
     type,
     {
       from: searchParams.get("from") ?? undefined,
       to: searchParams.get("to") ?? undefined,
-      departmentId: isAdminRole(session.role) ? searchParams.get("departmentId") ?? undefined : undefined,
+      departmentId: isAdminRole(session) ? parseFilterParam(searchParams.get("departmentId") ?? undefined) : undefined,
       categoryId: searchParams.get("categoryId") ?? undefined,
       vendorId: searchParams.get("vendorId") ?? undefined,
     },

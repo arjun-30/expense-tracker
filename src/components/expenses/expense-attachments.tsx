@@ -10,8 +10,8 @@ import { uploadAttachmentAction, deleteAttachmentAction } from "@/lib/actions/ex
 interface Attachment {
   id: string;
   fileName: string;
-  fileUrl: string;
-  fileSize: number;
+  storageKey: string;
+  fileSizeBytes: number | null;
   uploadedBy: { name: string };
   uploadedAt: string;
 }
@@ -52,10 +52,10 @@ export function ExpenseAttachments({ expenseId, attachments, canEdit }: { expens
       <ul className="space-y-1">
         {attachments.map((a) => (
           <li key={a.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-            <a href={a.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:underline">
+            <a href={`/api/files/${a.storageKey}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:underline">
               <FileText className="h-4 w-4 shrink-0" />
               <span>{a.fileName}</span>
-              <span className="text-xs text-muted-foreground">({(a.fileSize / 1024).toFixed(0)} KB)</span>
+              {a.fileSizeBytes !== null && <span className="text-xs text-muted-foreground">({(a.fileSizeBytes / 1024).toFixed(0)} KB)</span>}
             </a>
             {canEdit && (
               <Button variant="ghost" size="icon" disabled={pending} onClick={() => handleDelete(a.id)}>

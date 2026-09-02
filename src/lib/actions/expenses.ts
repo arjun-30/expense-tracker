@@ -4,8 +4,10 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole, isAdminRole, ForbiddenError } from "@/lib/rbac";
-import { Role, ExpenseStatus, ApprovalAction } from "@/generated/prisma/enums";
+import { requirePermission, isAdminRole, ForbiddenError } from "@/lib/rbac";
+import { hasPermission } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
+import { ExpenseStatus, ApprovalAction } from "@/generated/prisma/enums";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { expenseTotal } from "@/lib/services/calculations";
@@ -36,17 +38,18 @@ export interface ActionResult {
   id?: string;
 }
 
-const CREATE_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS, Role.EMPLOYEE, Role.PURCHASE_MANAGER, Role.MAINTENANCE_MANAGER, Role.TRANSPORT_MANAGER];
-const MANAGER_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
+// Every role can create/submit/cancel its own expenses — same as the old
+// CREATE_ROLES constant, which listed every Role enum value.
+const CREATE_PERMISSIONS = ["expenses.create"];
 
 export async function createExpenseAction(input: ExpenseInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, CREATE_ROLES);
+  requirePermission(session, CREATE_PERMISSIONS);
 
   const parsed = expenseSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
-  if (!isAdminRole(session.role) && data.departmentId !== session.departmentId) {
+  if (!isAdminRole(session) && data.departmentId !== session.departmentId) {
     return { success: false, error: "You can only file expenses under your own department" };
   }
   const total = expenseTotal(data.amount, data.taxAmount, data.discountAmount);
@@ -56,8 +59,9 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
       const expenseNumber = await nextSequenceNumber(tx.expense, "EXP");
       return tx.expense.create({
         data: {
+          companyId: session.companyId,
           expenseNumber,
-          date: data.date,
+          expenseDate: data.date,
           categoryId: data.categoryId,
           subcategoryId: data.subcategoryId || null,
           amount: data.amount,
@@ -77,7 +81,7 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
     })
   );
 
-  await audit({ userId: session.sub, action: "CREATE", module: "expenses", recordId: expense.id, newValue: expense });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Expense", entityId: expense.id, newValue: expense });
   revalidatePath("/expenses");
   return { success: true, id: expense.id };
 }
@@ -87,14 +91,14 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
   const existing = await prisma.expense.findUnique({ where: { id } });
   if (!existing) return { success: false, error: "Expense not found" };
   if (existing.status !== ExpenseStatus.DRAFT) return { success: false, error: "Only draft expenses can be edited" };
-  if (existing.employeeId !== session.sub && !MANAGER_ROLES.includes(session.role)) {
+  if (existing.employeeId !== session.sub && !isAdminRole(session)) {
     return { success: false, error: "You can only edit your own draft expenses" };
   }
 
   const parsed = expenseSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
-  if (!isAdminRole(session.role) && data.departmentId !== session.departmentId) {
+  if (!isAdminRole(session) && data.departmentId !== session.departmentId) {
     return { success: false, error: "You can only file expenses under your own department" };
   }
   const total = expenseTotal(data.amount, data.taxAmount, data.discountAmount);
@@ -102,7 +106,7 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
   const updated = await prisma.expense.update({
     where: { id },
     data: {
-      date: data.date,
+      expenseDate: data.date,
       categoryId: data.categoryId,
       subcategoryId: data.subcategoryId || null,
       amount: data.amount,
@@ -118,7 +122,7 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
     },
   });
 
-  await audit({ userId: session.sub, action: "UPDATE", module: "expenses", recordId: id, oldValue: existing, newValue: updated });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "UPDATE", entityType: "Expense", entityId: id, oldValue: existing, newValue: updated });
   revalidatePath("/expenses");
   revalidatePath(`/expenses/${id}`);
   return { success: true, id };
@@ -126,55 +130,55 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
 
 interface TransitionRule {
   from: ExpenseStatus[];
-  roles: Role[];
+  /** Required unless `ownerOnly` — the permission code that gates this transition. */
+  permission?: string;
   to: ExpenseStatus;
   action: ApprovalAction;
   requiresRemarks?: boolean;
+  /** Owner of the expense may always perform this transition, in addition to admins. */
   ownerOnly?: boolean;
 }
 
 const TRANSITIONS: Record<string, TransitionRule> = {
   submit: {
     from: [ExpenseStatus.DRAFT],
-    roles: [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS, Role.EMPLOYEE, Role.PURCHASE_MANAGER, Role.MAINTENANCE_MANAGER, Role.TRANSPORT_MANAGER],
     to: ExpenseStatus.SUBMITTED,
     action: ApprovalAction.SUBMITTED,
     ownerOnly: true,
   },
   review: {
     from: [ExpenseStatus.SUBMITTED],
-    roles: [Role.SUPER_ADMIN, Role.ADMIN],
+    permission: "expenses.review",
     to: ExpenseStatus.UNDER_REVIEW,
     action: ApprovalAction.REVIEWED,
   },
   verify: {
     from: [ExpenseStatus.UNDER_REVIEW],
-    roles: [Role.SUPER_ADMIN, Role.ACCOUNTS],
+    permission: "expenses.verify",
     to: ExpenseStatus.UNDER_REVIEW,
     action: ApprovalAction.VERIFIED,
   },
   approve: {
     from: [ExpenseStatus.SUBMITTED, ExpenseStatus.UNDER_REVIEW],
-    roles: [Role.SUPER_ADMIN, Role.ADMIN],
+    permission: "expenses.approve",
     to: ExpenseStatus.APPROVED,
     action: ApprovalAction.APPROVED,
   },
   reject: {
     from: [ExpenseStatus.SUBMITTED, ExpenseStatus.UNDER_REVIEW],
-    roles: [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS],
+    permission: "expenses.reject",
     to: ExpenseStatus.REJECTED,
     action: ApprovalAction.REJECTED,
     requiresRemarks: true,
   },
   markPaid: {
     from: [ExpenseStatus.APPROVED],
-    roles: [Role.SUPER_ADMIN, Role.ACCOUNTS],
+    permission: "expenses.mark_paid",
     to: ExpenseStatus.PAID,
     action: ApprovalAction.PAID,
   },
   cancel: {
     from: [ExpenseStatus.DRAFT, ExpenseStatus.SUBMITTED],
-    roles: [Role.SUPER_ADMIN, Role.ADMIN, Role.ACCOUNTS, Role.EMPLOYEE, Role.PURCHASE_MANAGER, Role.MAINTENANCE_MANAGER, Role.TRANSPORT_MANAGER],
     to: ExpenseStatus.CANCELLED,
     action: ApprovalAction.CANCELLED,
     ownerOnly: true,
@@ -196,12 +200,11 @@ export async function transitionExpenseAction(
     return { success: false, error: `Cannot ${transition} an expense in status ${expense.status}` };
   }
   const isOwner = expense.employeeId === session.sub;
-  const roleAllowed = rule.roles.includes(session.role);
   if (rule.ownerOnly) {
-    if (!(isOwner || MANAGER_ROLES.includes(session.role))) {
+    if (!(isOwner || isAdminRole(session))) {
       throw new ForbiddenError();
     }
-  } else if (!roleAllowed) {
+  } else if (!rule.permission || !hasPermission(session, rule.permission)) {
     throw new ForbiddenError();
   }
   if (rule.requiresRemarks && !remarks?.trim()) {
@@ -211,16 +214,12 @@ export async function transitionExpenseAction(
   const updated = await prisma.$transaction(async (tx) => {
     const u = await tx.expense.update({
       where: { id },
-      data: {
-        status: rule.to,
-        ...(rule.action === ApprovalAction.APPROVED ? { approvedById: session.sub, approvedAt: new Date() } : {}),
-        ...(rule.action === ApprovalAction.PAID ? { paymentStatus: "PAID" } : {}),
-        remarks: remarks ?? expense.remarks,
-      },
+      data: { status: rule.to },
     });
     await tx.expenseApproval.create({
       data: {
         expenseId: id,
+        approvalLevel: 1,
         action: rule.action,
         actedById: session.sub,
         fromStatus: expense.status,
@@ -232,17 +231,19 @@ export async function transitionExpenseAction(
   });
 
   await audit({
+    companyId: session.companyId,
     userId: session.sub,
     action: `EXPENSE_${transition.toUpperCase()}`,
-    module: "expenses",
-    recordId: id,
+    entityType: "Expense",
+    entityId: id,
     oldValue: { status: expense.status },
     newValue: { status: rule.to },
   });
 
   if (rule.to === ExpenseStatus.SUBMITTED) {
     await notify({
-      role: Role.ADMIN,
+      companyId: session.companyId,
+      roleName: ROLES.ADMIN,
       type: "expense_awaiting_approval",
       title: "Expense awaiting approval",
       message: `${expense.expenseNumber} was submitted for review.`,
@@ -252,6 +253,7 @@ export async function transitionExpenseAction(
   }
   if (rule.to === ExpenseStatus.REJECTED) {
     await notify({
+      companyId: session.companyId,
       userId: expense.employeeId,
       type: "expense_rejected",
       title: "Expense rejected",
@@ -262,6 +264,7 @@ export async function transitionExpenseAction(
   }
   if (rule.to === ExpenseStatus.APPROVED) {
     await notify({
+      companyId: session.companyId,
       userId: expense.employeeId,
       type: "expense_approved",
       title: "Expense approved",
@@ -270,10 +273,11 @@ export async function transitionExpenseAction(
       entityId: id,
     });
     await checkBudgetThresholds({
+      companyId: session.companyId,
       departmentId: expense.departmentId,
       categoryId: expense.categoryId,
       costCenterId: expense.costCenterId,
-      date: expense.date,
+      date: expense.expenseDate,
     });
   }
 
@@ -300,14 +304,14 @@ export async function uploadAttachmentAction(expenseId: string, formData: FormDa
     data: {
       expenseId,
       fileName: file.name,
-      fileUrl: stored.url,
+      storageKey: stored.key,
       fileType: file.type,
-      fileSize: file.size,
+      fileSizeBytes: BigInt(file.size),
       uploadedById: session.sub,
     },
   });
 
-  await audit({ userId: session.sub, action: "UPLOAD_ATTACHMENT", module: "expenses", recordId: expenseId, newValue: { fileName: file.name } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "UPLOAD_ATTACHMENT", entityType: "Expense", entityId: expenseId, newValue: { fileName: file.name } });
   revalidatePath(`/expenses/${expenseId}`);
   return { success: true, id: attachment.id };
 }
@@ -316,14 +320,13 @@ export async function deleteAttachmentAction(attachmentId: string): Promise<Acti
   const session = await requireSession();
   const attachment = await prisma.expenseAttachment.findUnique({ where: { id: attachmentId } });
   if (!attachment) return { success: false, error: "Attachment not found" };
-  if (attachment.uploadedById !== session.sub && !MANAGER_ROLES.includes(session.role)) {
+  if (attachment.uploadedById !== session.sub && !isAdminRole(session)) {
     throw new ForbiddenError();
   }
 
-  const key = attachment.fileUrl.split("/").pop()!;
-  await getStorageProvider().delete(key);
+  await getStorageProvider().delete(attachment.storageKey);
   await prisma.expenseAttachment.delete({ where: { id: attachmentId } });
-  await audit({ userId: session.sub, action: "DELETE_ATTACHMENT", module: "expenses", recordId: attachment.expenseId, oldValue: { fileName: attachment.fileName } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "DELETE_ATTACHMENT", entityType: "Expense", entityId: attachment.expenseId, oldValue: { fileName: attachment.fileName } });
   revalidatePath(`/expenses/${attachment.expenseId}`);
   return { success: true };
 }

@@ -6,7 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { MachineFormDialog } from "@/components/maintenance/machine-form-dialog";
 import { formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   RUNNING: "default",
@@ -21,20 +22,20 @@ export default async function MachineryPage() {
   if (!allowed) return <AccessRestricted />;
 
   const [machines, departments, maintenanceCosts] = await Promise.all([
-    prisma.machine.findMany({ include: { department: true }, orderBy: { machineCode: "asc" } }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
-    prisma.maintenanceRecord.groupBy({ by: ["machineId"], _sum: { totalCost: true } }),
+    prisma.machine.findMany({ where: { companyId: session.companyId }, include: { department: true }, orderBy: { machineCode: "asc" } }),
+    prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
+    prisma.maintenanceRecord.groupBy({ by: ["machineId"], where: { machine: { companyId: session.companyId } }, _sum: { totalCost: true } }),
   ]);
   const costMap = new Map(maintenanceCosts.map((m) => [m.machineId, Number(m._sum?.totalCost ?? 0)]));
 
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.MAINTENANCE_MANAGER];
+  const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER);
 
   return (
     <div>
       <PageHeader
         title="Machinery"
         description="Machine asset register"
-        action={canManage.includes(session.role) ? <MachineFormDialog departments={departments} /> : undefined}
+        action={canManage ? <MachineFormDialog departments={departments} /> : undefined}
       />
       <div className="rounded-lg border bg-card">
         <Table>
@@ -42,7 +43,6 @@ export default async function MachineryPage() {
             <TableRow>
               <TableHead>Code</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
               <TableHead>Department</TableHead>
               <TableHead className="text-right">Purchase Price</TableHead>
               <TableHead className="text-right">Maintenance Cost (all time)</TableHead>
@@ -54,15 +54,14 @@ export default async function MachineryPage() {
               <TableRow key={m.id}>
                 <TableCell className="font-medium">{m.machineCode}</TableCell>
                 <TableCell>{m.name}</TableCell>
-                <TableCell>{m.category ?? "—"}</TableCell>
                 <TableCell>{m.department?.name ?? "—"}</TableCell>
-                <TableCell className="text-right tabular-nums">{m.purchasePrice ? formatINR(Number(m.purchasePrice)) : "—"}</TableCell>
+                <TableCell className="text-right tabular-nums">{m.purchaseCost ? formatINR(Number(m.purchaseCost)) : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(costMap.get(m.id) ?? 0)}</TableCell>
                 <TableCell><Badge variant={STATUS_VARIANT[m.status]}>{m.status.replace("_", " ")}</Badge></TableCell>
               </TableRow>
             ))}
             {machines.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No machines yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No machines yet.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>

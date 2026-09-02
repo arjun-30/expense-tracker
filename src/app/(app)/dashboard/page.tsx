@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { TrendChart, RankingBarChart, BudgetVsActualChart } from "@/components/dashboard/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { guardModule } from "@/lib/guards";
 import {
   getKpis,
   getExpenseTrend,
@@ -25,16 +26,18 @@ import {
 } from "@/lib/services/dashboard";
 
 export default async function DashboardPage() {
+  const { session } = await guardModule("dashboard");
+  const companyId = session.companyId;
   const [kpis, trend, byCategory, byDepartment, topVendors, machineCosts, vehicleFuel, budgetVsActual] =
     await Promise.all([
-      getKpis(),
-      getExpenseTrend(12),
-      getExpenseByCategory(),
-      getDepartmentSpending(),
-      getTopVendors(5),
-      getMachineMaintenanceCost(5),
-      getVehicleFuelCost(5),
-      getBudgetVsActual(),
+      getKpis(companyId),
+      getExpenseTrend(companyId, 12),
+      getExpenseByCategory(companyId),
+      getDepartmentSpending(companyId),
+      getTopVendors(companyId, 5),
+      getMachineMaintenanceCost(companyId, 5),
+      getVehicleFuelCost(companyId, 5),
+      getBudgetVsActual(companyId),
     ]);
 
   return (

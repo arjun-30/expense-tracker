@@ -9,11 +9,11 @@ import { getFuelReportRows } from "@/lib/services/reports";
 import { formatDate, formatINR } from "@/lib/format";
 
 export default async function FuelReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("reports");
+  const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
 
   const sp = await searchParams;
-  const rows = await getFuelReportRows({ from: sp.from, to: sp.to });
+  const rows = await getFuelReportRows(session.companyId, { from: sp.from, to: sp.to });
 
   return (
     <div>

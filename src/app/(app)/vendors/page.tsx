@@ -6,15 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { VendorFormDialog } from "@/components/vendors/vendor-form-dialog";
 import { getVendorsWithStats } from "@/lib/services/vendors";
 import { formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 export default async function VendorsPage() {
   const { session, allowed } = await guardModule("vendors");
   if (!allowed) return <AccessRestricted />;
 
-  const vendors = await getVendorsWithStats();
-  const canManage: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.PURCHASE_MANAGER];
-  const canEdit = canManage.includes(session.role);
+  const vendors = await getVendorsWithStats(session.companyId);
+  const canEdit = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER);
 
   return (
     <div>
@@ -33,7 +33,7 @@ export default async function VendorsPage() {
               <TableHead className="text-right">Total Purchases</TableHead>
               <TableHead className="text-right">Total Payments</TableHead>
               <TableHead className="text-right">Outstanding</TableHead>
-              <TableHead className="text-right">Invoices</TableHead>
+              <TableHead className="text-right">Purchase Orders</TableHead>
               <TableHead>Status</TableHead>
               {canEdit && <TableHead />}
             </TableRow>
@@ -47,9 +47,9 @@ export default async function VendorsPage() {
                 <TableCell className="text-right tabular-nums">{formatINR(v.totalPurchases)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(v.totalPayments)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(v.outstanding)}</TableCell>
-                <TableCell className="text-right tabular-nums">{v.invoiceCount}</TableCell>
+                <TableCell className="text-right tabular-nums">{v.purchaseOrderCount}</TableCell>
                 <TableCell>
-                  <Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status}</Badge>
+                  <Badge variant={v.isActive ? "default" : "outline"}>{v.isActive ? "ACTIVE" : "INACTIVE"}</Badge>
                 </TableCell>
                 {canEdit && (
                   <TableCell>

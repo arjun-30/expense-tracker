@@ -6,26 +6,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { PaymentFormDialog } from "@/components/purchases/payment-form-dialog";
 import { formatDate, formatINR } from "@/lib/format";
-import { Role } from "@/generated/prisma/enums";
+import { hasRole } from "@/lib/auth/permissions";
+import { ROLES } from "@/lib/rbac-client";
 
 export default async function PaymentsPage() {
   const { session, allowed } = await guardModule("payments");
   if (!allowed) return <AccessRestricted />;
 
-  const [payments, vendors, invoices] = await Promise.all([
-    prisma.payment.findMany({ include: { vendor: true, invoice: true }, orderBy: { paymentDate: "desc" }, take: 100 }),
-    prisma.vendor.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    prisma.invoice.findMany({ include: { payments: true } }),
+  const [payments, vendors, expenses] = await Promise.all([
+    prisma.payment.findMany({ where: { companyId: session.companyId }, include: { vendor: true, expense: true }, orderBy: { paymentDate: "desc" }, take: 100 }),
+    prisma.vendor.findMany({ where: { companyId: session.companyId, isActive: true }, orderBy: { name: "asc" } }),
+    prisma.expense.findMany({ where: { companyId: session.companyId, vendorId: { not: null } }, include: { payments: true }, orderBy: { expenseDate: "desc" }, take: 200 }),
   ]);
 
-  const canRecord: Role[] = [Role.SUPER_ADMIN, Role.ACCOUNTS];
+  const canRecord = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ACCOUNTS);
 
-  const invoiceOptions = invoices.map((i) => ({
-    id: i.id,
-    invoiceNumber: i.invoiceNumber,
-    vendorId: i.vendorId,
-    totalAmount: Number(i.totalAmount),
-    paidAmount: i.payments.filter((p) => p.status === "PAID").reduce((s, p) => s + Number(p.amount), 0),
+  const expenseOptions = expenses.map((e) => ({
+    id: e.id,
+    expenseNumber: e.expenseNumber,
+    vendorId: e.vendorId!,
+    totalAmount: Number(e.totalAmount),
+    paidAmount: e.payments.filter((p) => p.status === "PAID").reduce((s, p) => s + Number(p.amount), 0),
   }));
 
   return (
@@ -33,7 +34,7 @@ export default async function PaymentsPage() {
       <PageHeader
         title="Payments"
         description="Vendor payments and settlement status"
-        action={canRecord.includes(session.role) ? <PaymentFormDialog vendors={vendors} invoices={invoiceOptions} /> : undefined}
+        action={canRecord ? <PaymentFormDialog vendors={vendors} expenses={expenseOptions} /> : undefined}
       />
       <div className="rounded-lg border bg-card">
         <Table>
@@ -41,7 +42,7 @@ export default async function PaymentsPage() {
             <TableRow>
               <TableHead>Payment #</TableHead>
               <TableHead>Vendor</TableHead>
-              <TableHead>Invoice</TableHead>
+              <TableHead>Expense</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Method</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -53,7 +54,7 @@ export default async function PaymentsPage() {
               <TableRow key={p.id}>
                 <TableCell className="font-medium">{p.paymentNumber}</TableCell>
                 <TableCell>{p.vendor.name}</TableCell>
-                <TableCell>{p.invoice?.invoiceNumber ?? "—"}</TableCell>
+                <TableCell>{p.expense?.expenseNumber ?? "—"}</TableCell>
                 <TableCell>{formatDate(p.paymentDate)}</TableCell>
                 <TableCell>{p.method.replace("_", " ")}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(Number(p.amount))}</TableCell>

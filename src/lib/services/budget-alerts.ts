@@ -1,15 +1,16 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { notify } from "@/lib/notify";
+import { actualSpendForAllocation } from "@/lib/services/budgets";
 import { budgetUtilizationRatio } from "@/lib/services/calculations";
-import { Role, AlertSeverity, ExpenseStatus } from "@/generated/prisma/enums";
+import { NotificationSeverity } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/rbac-client";
 
-const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
-
-/** Re-checks budgets covering (departmentId, categoryId, costCenterId, date) after an
- * expense moves to APPROVED/PAID and notifies Admins/Super Admins at the configured
- * 80% warning / 100% critical thresholds (§25, §44 budget_warning / budget_exceeded rules). */
+/** Re-checks budget allocations covering (departmentId, categoryId, costCenterId, date) after
+ * an expense moves to APPROVED/PAID and notifies Admins at the configured 80% warning /
+ * 100% critical thresholds (§25, §44 budget_warning / budget_exceeded rules). */
 export async function checkBudgetThresholds(params: {
+  companyId: string;
   departmentId: string;
   categoryId: string;
   costCenterId?: string | null;
@@ -18,52 +19,45 @@ export async function checkBudgetThresholds(params: {
   const warningThreshold = Number(process.env.BUDGET_WARNING_THRESHOLD ?? "0.8");
   const criticalThreshold = Number(process.env.BUDGET_CRITICAL_THRESHOLD ?? "1.0");
 
-  const budgets = await prisma.budget.findMany({
+  const allocations = await prisma.budgetAllocation.findMany({
     where: {
-      periodStart: { lte: params.date },
-      periodEnd: { gte: params.date },
+      budget: { companyId: params.companyId, periodStart: { lte: params.date }, periodEnd: { gte: params.date } },
       OR: [
         { departmentId: params.departmentId },
         { categoryId: params.categoryId },
         params.costCenterId ? { costCenterId: params.costCenterId } : {},
       ],
     },
+    include: { budget: true },
   });
 
-  for (const budget of budgets) {
-    const actual = await prisma.expense.aggregate({
-      where: {
-        status: { in: FINALIZED },
-        date: { gte: budget.periodStart, lte: budget.periodEnd },
-        ...(budget.departmentId ? { departmentId: budget.departmentId } : {}),
-        ...(budget.categoryId ? { categoryId: budget.categoryId } : {}),
-        ...(budget.costCenterId ? { costCenterId: budget.costCenterId } : {}),
-      },
-      _sum: { totalAmount: true },
-    });
-    const actualAmount = Number(actual._sum?.totalAmount ?? 0);
-    const ratio = budgetUtilizationRatio(Number(budget.amount), actualAmount);
+  for (const alloc of allocations) {
+    const actualAmount = await actualSpendForAllocation(params.companyId, alloc, alloc.budget.periodStart, alloc.budget.periodEnd);
+    const allocatedAmount = Number(alloc.allocatedAmount);
+    const ratio = budgetUtilizationRatio(allocatedAmount, actualAmount);
     if (ratio === null) continue;
 
     if (ratio >= criticalThreshold) {
       await notify({
-        role: Role.ADMIN,
+        companyId: params.companyId,
+        roleName: ROLES.ADMIN,
         type: "budget_exceeded",
-        severity: AlertSeverity.CRITICAL,
+        severity: NotificationSeverity.CRITICAL,
         title: "Budget exceeded",
-        message: `${budget.name} has exceeded its budget by ${formatOver(actualAmount - Number(budget.amount))}.`,
+        message: `${alloc.budget.name} has exceeded its budget by ${formatOver(actualAmount - allocatedAmount)}.`,
         entityType: "Budget",
-        entityId: budget.id,
+        entityId: alloc.budget.id,
       });
     } else if (ratio >= warningThreshold) {
       await notify({
-        role: Role.ADMIN,
+        companyId: params.companyId,
+        roleName: ROLES.ADMIN,
         type: "budget_warning",
-        severity: AlertSeverity.WARNING,
+        severity: NotificationSeverity.WARNING,
         title: "Budget nearing limit",
-        message: `${budget.name} has used ${(ratio * 100).toFixed(0)}% of its allocated budget.`,
+        message: `${alloc.budget.name} has used ${(ratio * 100).toFixed(0)}% of its allocated budget.`,
         entityType: "Budget",
-        entityId: budget.id,
+        entityId: alloc.budget.id,
       });
     }
   }

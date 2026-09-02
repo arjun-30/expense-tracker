@@ -23,10 +23,12 @@ function initials(name: string): string {
 export async function AppTopbar({ session }: { session: SessionPayload }) {
   const unreadCount = await prisma.notification.count({
     where: {
+      companyId: session.companyId,
       isRead: false,
-      OR: [{ userId: session.sub }, { role: session.role }],
+      OR: [{ userId: session.sub }, { roleId: { in: session.roleIds } }],
     },
   });
+  const primaryRole = session.roles[0];
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b bg-card/60 px-4 backdrop-blur-sm">
@@ -50,14 +52,14 @@ export async function AppTopbar({ session }: { session: SessionPayload }) {
               </span>
               <span className="hidden flex-col items-start leading-tight sm:flex">
                 <span className="text-sm font-medium">{session.name}</span>
-                <span className="text-[11px] text-muted-foreground">{ROLE_LABELS[session.role]}</span>
+                <span className="text-[11px] text-muted-foreground">{primaryRole ? ROLE_LABELS[primaryRole as keyof typeof ROLE_LABELS] : "—"}</span>
               </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>
               <div className="font-medium">{session.name}</div>
-              <div className="text-xs font-normal text-muted-foreground">{ROLE_LABELS[session.role]}</div>
+              <div className="text-xs font-normal text-muted-foreground">{primaryRole ? ROLE_LABELS[primaryRole as keyof typeof ROLE_LABELS] : "—"}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <form action={logoutAction}>

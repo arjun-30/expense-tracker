@@ -1,30 +1,33 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { notify } from "@/lib/notify";
-import { Role, AlertSeverity } from "@/generated/prisma/enums";
+import { NotificationSeverity } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/rbac-client";
 import { spareReplacementFrequency } from "@/lib/services/calculations";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Runs the four repeated-spare-replacement rules (§19) after a spare is issued
- * against a maintenance record on a machine. Fires an in-app notification per
- * rule that trips — callers don't need to know the rule details.
+ * Runs the four repeated-spare-replacement rules (§19) after a consumable is
+ * issued against a maintenance record on a machine. Fires an in-app
+ * notification per rule that trips — callers don't need to know the rule
+ * details.
  */
 export async function checkSpareReplacementRules(params: {
-  sparePartId: string;
+  companyId: string;
+  consumableId: string;
   machineId: string;
   issuedAt: Date;
 }) {
-  const [sparePart, machine] = await Promise.all([
-    prisma.sparePart.findUnique({ where: { id: params.sparePartId } }),
+  const [consumable, machine] = await Promise.all([
+    prisma.consumable.findUnique({ where: { id: params.consumableId } }),
     prisma.machine.findUnique({ where: { id: params.machineId } }),
   ]);
-  if (!sparePart || !machine) return;
+  if (!consumable || !machine) return;
 
   const sameSpareOnMachine = await prisma.maintenanceSpare.findMany({
     where: {
-      sparePartId: params.sparePartId,
+      consumableId: params.consumableId,
       maintenanceRecord: { machineId: params.machineId },
     },
     include: { maintenanceRecord: true },
@@ -42,11 +45,12 @@ export async function checkSpareReplacementRules(params: {
     const previous = within7[1];
     const daysAgo = Math.round((params.issuedAt.getTime() - previous.issuedAt.getTime()) / DAY_MS);
     await notify({
-      role: Role.MAINTENANCE_MANAGER,
+      companyId: params.companyId,
+      roleName: ROLES.MAINTENANCE_MANAGER,
       type: "same_spare_same_machine",
-      severity: AlertSeverity.CRITICAL,
+      severity: NotificationSeverity.CRITICAL,
       title: "Repeated Spare Replacement",
-      message: `${sparePart.name} was replaced ${daysAgo} day(s) ago on ${machine.name} and has been replaced again. Possible causes: poor-quality spare, incorrect installation, machine problem, excessive load, or incorrect specification.`,
+      message: `${consumable.name} was replaced ${daysAgo} day(s) ago on ${machine.name} and has been replaced again. Possible causes: poor-quality spare, incorrect installation, machine problem, excessive load, or incorrect specification.`,
       entityType: "Machine",
       entityId: machine.id,
     });
@@ -55,11 +59,12 @@ export async function checkSpareReplacementRules(params: {
   // Rule 2 — same spare replaced 3+ times within 30 days.
   if (within30.length >= 3) {
     await notify({
-      role: Role.MAINTENANCE_MANAGER,
+      companyId: params.companyId,
+      roleName: ROLES.MAINTENANCE_MANAGER,
       type: "critical_repeated_failure",
-      severity: AlertSeverity.CRITICAL,
+      severity: NotificationSeverity.CRITICAL,
       title: "Critical repeated failure",
-      message: `${sparePart.name} has been replaced ${within30.length} times on ${machine.name} in the last 30 days.`,
+      message: `${consumable.name} has been replaced ${within30.length} times on ${machine.name} in the last 30 days.`,
       entityType: "Machine",
       entityId: machine.id,
     });
@@ -67,7 +72,7 @@ export async function checkSpareReplacementRules(params: {
 
   // Rule 3 — replacement frequency exceeds this spare's historical average across all machines.
   const allReplacements = await prisma.maintenanceSpare.findMany({
-    where: { sparePartId: params.sparePartId },
+    where: { consumableId: params.consumableId },
     orderBy: { issuedAt: "asc" },
     select: { issuedAt: true },
   });
@@ -78,59 +83,76 @@ export async function checkSpareReplacementRules(params: {
     const recentFrequency = spareReplacementFrequency(within30.length, 30);
     if (recentFrequency > overallFrequency * 1.5) {
       await notify({
-        role: Role.MAINTENANCE_MANAGER,
+        companyId: params.companyId,
+        roleName: ROLES.MAINTENANCE_MANAGER,
         type: "abnormal_spare_consumption",
-        severity: AlertSeverity.WARNING,
+        severity: NotificationSeverity.WARNING,
         title: "Abnormal spare consumption",
-        message: `${sparePart.name} is being replaced faster than its historical average (${recentFrequency.toFixed(1)} vs ${overallFrequency.toFixed(1)} per 30 days).`,
-        entityType: "SparePart",
-        entityId: sparePart.id,
+        message: `${consumable.name} is being replaced faster than its historical average (${recentFrequency.toFixed(1)} vs ${overallFrequency.toFixed(1)} per 30 days).`,
+        entityType: "Consumable",
+        entityId: consumable.id,
       });
     }
   }
 
   // Rule 4 — this supplier's spares failing repeatedly across the fleet.
-  if (sparePart.supplierId) {
+  // Consumables have no stored default supplier any more (supplier is only
+  // ever recorded per purchase order), so the "current supplier" is derived
+  // from the most recent purchase order line for this consumable.
+  const recentPoItem = await prisma.purchaseOrderItem.findFirst({
+    where: { consumableId: params.consumableId },
+    orderBy: { purchaseOrder: { createdAt: "desc" } },
+    include: { purchaseOrder: true },
+  });
+  const vendorId = recentPoItem?.purchaseOrder.vendorId;
+  if (vendorId) {
     const since = new Date(params.issuedAt.getTime() - 60 * DAY_MS);
-    const supplierFailures = await prisma.maintenanceSpare.count({
-      where: {
-        issuedAt: { gte: since, lte: params.issuedAt },
-        sparePart: { supplierId: sparePart.supplierId },
-      },
+    const suppliedConsumables = await prisma.purchaseOrderItem.findMany({
+      where: { purchaseOrder: { vendorId }, consumableId: { not: null } },
+      distinct: ["consumableId"],
+      select: { consumableId: true },
     });
+    const consumableIds = suppliedConsumables.map((r) => r.consumableId).filter((id): id is string => !!id);
+    const supplierFailures = consumableIds.length
+      ? await prisma.maintenanceSpare.count({
+          where: { issuedAt: { gte: since, lte: params.issuedAt }, consumableId: { in: consumableIds } },
+        })
+      : 0;
     if (supplierFailures >= 3) {
-      const supplier = await prisma.vendor.findUnique({ where: { id: sparePart.supplierId } });
+      const supplier = await prisma.vendor.findUnique({ where: { id: vendorId } });
       await notify({
-        role: Role.PURCHASE_MANAGER,
+        companyId: params.companyId,
+        roleName: ROLES.PURCHASE_MANAGER,
         type: "supplier_quality_issue",
-        severity: AlertSeverity.WARNING,
+        severity: NotificationSeverity.WARNING,
         title: "Supplier quality issue detected",
         message: `${supplier?.name ?? "Supplier"} has supplied parts involved in ${supplierFailures} replacements in the last 60 days.`,
         entityType: "Vendor",
-        entityId: sparePart.supplierId,
+        entityId: vendorId,
       });
     }
   }
 }
 
-export async function checkLowStock(sparePartId: string) {
-  const spare = await prisma.sparePart.findUnique({ where: { id: sparePartId } });
-  if (!spare) return;
-  if (Number(spare.currentStock) < Number(spare.minimumStock)) {
+export async function checkLowStock(companyId: string, consumableId: string) {
+  const consumable = await prisma.consumable.findUnique({ where: { id: consumableId } });
+  if (!consumable) return;
+  if (Number(consumable.currentStock) < Number(consumable.minimumStock)) {
     await notify({
-      role: Role.PURCHASE_MANAGER,
+      companyId,
+      roleName: ROLES.PURCHASE_MANAGER,
       type: "low_stock",
-      severity: AlertSeverity.WARNING,
+      severity: NotificationSeverity.WARNING,
       title: "Low Stock",
-      message: `${spare.name} — current stock ${spare.currentStock}, minimum ${spare.minimumStock}.`,
-      entityType: "SparePart",
-      entityId: spare.id,
+      message: `${consumable.name} — current stock ${consumable.currentStock}, minimum ${consumable.minimumStock}.`,
+      entityType: "Consumable",
+      entityId: consumable.id,
     });
   }
 }
 
 export interface SpareReliability {
-  sparePartId: string;
+  consumableId: string;
   name: string;
   replacements: number;
   averageLifespanDays: number | null;
@@ -139,12 +161,13 @@ export interface SpareReliability {
   reliability: "Good" | "Fair" | "Poor";
 }
 
-export async function getSpareReliability(): Promise<SpareReliability[]> {
-  const spares = await prisma.sparePart.findMany({
+export async function getSpareReliability(companyId: string): Promise<SpareReliability[]> {
+  const consumables = await prisma.consumable.findMany({
+    where: { companyId },
     include: { maintenanceSpares: { orderBy: { issuedAt: "asc" } } },
   });
 
-  return spares
+  return consumables
     .filter((s) => s.maintenanceSpares.length > 0)
     .map((s) => {
       const events = s.maintenanceSpares;
@@ -165,7 +188,7 @@ export async function getSpareReliability(): Promise<SpareReliability[]> {
       else if (averageLifespanDays !== null && averageLifespanDays < 45) reliability = "Fair";
 
       return {
-        sparePartId: s.id,
+        consumableId: s.id,
         name: s.name,
         replacements: events.length,
         averageLifespanDays,

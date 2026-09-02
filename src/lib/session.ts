@@ -1,7 +1,6 @@
 import "server-only";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import type { Role } from "@/generated/prisma/enums";
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "mecs_session";
 const SECRET = new TextEncoder().encode(
@@ -13,8 +12,14 @@ export interface SessionPayload {
   sub: string; // user id
   name: string;
   email: string;
-  role: Role;
+  companyId: string;
   departmentId: string | null;
+  /** Role names this user holds (a user can hold more than one role — see user_roles). */
+  roles: string[];
+  /** Ids of the roles above, e.g. for scoping notifications by role_id. */
+  roleIds: string[];
+  /** Permission codes granted via the roles above, resolved once at login. */
+  permissions: string[];
   [key: string]: unknown;
 }
 

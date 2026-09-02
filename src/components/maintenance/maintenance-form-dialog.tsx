@@ -10,7 +10,6 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createMaintenanceRecordAction } from "@/lib/actions/maintenance";
@@ -26,8 +25,7 @@ const schema = z.object({
   labourCost: z.number().min(0),
   otherCost: z.number().min(0),
   downtimeMinutes: z.number().int().min(0).optional(),
-  remarks: z.string().optional(),
-  spares: z.array(z.object({ sparePartId: z.string().min(1), quantity: z.number().positive() })),
+  spares: z.array(z.object({ consumableId: z.string().min(1), quantity: z.number().positive() })),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -49,10 +47,8 @@ export function MaintenanceFormDialog({ machines, spareParts }: { machines: { id
       problem: values.problem || null,
       technician: values.technician || null,
       downtimeMinutes: values.downtimeMinutes ?? null,
-      remarks: values.remarks || null,
       date: new Date(values.date),
       diagnosis: null,
-      nextMaintenanceDate: null,
     });
     setSubmitting(false);
     if (!result.success) { toast.error(result.error ?? "Something went wrong"); return; }
@@ -118,7 +114,7 @@ export function MaintenanceFormDialog({ machines, spareParts }: { machines: { id
             {fields.map((field, index) => (
               <div key={field.id} className="grid grid-cols-12 items-center gap-2">
                 <div className="col-span-8">
-                  <Controller control={control} name={`spares.${index}.sparePartId`} render={({ field: f }) => (
+                  <Controller control={control} name={`spares.${index}.consumableId`} render={({ field: f }) => (
                     <Select onValueChange={f.onChange} value={f.value}>
                       <SelectTrigger><SelectValue placeholder="Spare part" /></SelectTrigger>
                       <SelectContent>
@@ -135,14 +131,9 @@ export function MaintenanceFormDialog({ machines, spareParts }: { machines: { id
                 </div>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={() => append({ sparePartId: "", quantity: 1 })}>
+            <Button type="button" variant="outline" size="sm" onClick={() => append({ consumableId: "", quantity: 1 })}>
               <Plus className="h-4 w-4" /> Add spare
             </Button>
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="remarks">Remarks</Label>
-            <Textarea id="remarks" rows={2} {...register("remarks")} />
           </div>
 
           <DialogFooter>

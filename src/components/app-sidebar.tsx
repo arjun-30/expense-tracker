@@ -5,10 +5,9 @@ import { usePathname } from "next/navigation";
 import { Factory } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import type { Role } from "@/generated/prisma/enums";
 import { canAccessModuleClient } from "@/lib/rbac-client";
 
-export function AppSidebar({ role }: { role: Role }) {
+export function AppSidebar({ roles }: { roles: string[] }) {
   const pathname = usePathname();
 
   return (
@@ -24,7 +23,7 @@ export function AppSidebar({ role }: { role: Role }) {
       </div>
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {NAV_SECTIONS.map((section, idx) => {
-          const items = section.items.filter((item) => canAccessModuleClient(role, item.key));
+          const items = section.items.filter((item) => canAccessModuleClient(roles, item.key));
           if (items.length === 0) return null;
           return (
             <div key={idx}>

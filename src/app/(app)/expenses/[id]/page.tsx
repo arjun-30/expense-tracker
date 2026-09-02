@@ -38,7 +38,6 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       department: true,
       costCenter: true,
       employee: true,
-      approvedBy: true,
       attachments: { include: { uploadedBy: true }, orderBy: { uploadedAt: "desc" } },
       approvals: { include: { actedBy: true }, orderBy: { actedAt: "asc" } },
     },
@@ -62,7 +61,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <Badge variant={EXPENSE_STATUS_VARIANT[expense.status]} className="text-sm">
               {EXPENSE_STATUS_LABELS[expense.status]}
             </Badge>
-            {expense.status === "DRAFT" && (isOwner || ["SUPER_ADMIN", "ADMIN"].includes(session.role)) && (
+            {expense.status === "DRAFT" && (isOwner || session.roles.some((r) => ["SUPER_ADMIN", "ADMIN"].includes(r))) && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/expenses/${expense.id}/edit`}><Pencil className="h-4 w-4" /> Edit</Link>
               </Button>
@@ -75,7 +74,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         <Card className="lg:col-span-2">
           <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
           <CardContent>
-            <DetailRow label="Date" value={formatDate(expense.date)} />
+            <DetailRow label="Date" value={formatDate(expense.expenseDate)} />
             <DetailRow label="Category" value={expense.subcategory ? `${expense.category.name} / ${expense.subcategory.name}` : expense.category.name} />
             <DetailRow label="Department" value={expense.department.name} />
             <DetailRow label="Cost Center" value={expense.costCenter?.name ?? "—"} />
@@ -86,10 +85,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <DetailRow label="Discount" value={formatINR(Number(expense.discountAmount))} />
             <DetailRow label="Total" value={<span className="text-base">{formatINR(Number(expense.totalAmount))}</span>} />
             <DetailRow label="Payment Method" value={expense.paymentMethod ?? "—"} />
-            <DetailRow label="Payment Status" value={expense.paymentStatus} />
             <DetailRow label="Reference #" value={expense.referenceNumber ?? "—"} />
-            {expense.approvedBy && <DetailRow label="Approved By" value={`${expense.approvedBy.name} on ${formatDate(expense.approvedAt!)}`} />}
-            {expense.remarks && <DetailRow label="Remarks" value={expense.remarks} />}
           </CardContent>
         </Card>
 
@@ -97,7 +93,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
           <Card>
             <CardHeader><CardTitle className="text-base">Actions</CardTitle></CardHeader>
             <CardContent>
-              <ExpenseActions expenseId={expense.id} status={expense.status} role={session.role} isOwner={isOwner} />
+              <ExpenseActions expenseId={expense.id} status={expense.status} roles={session.roles} permissions={session.permissions} isOwner={isOwner} />
             </CardContent>
           </Card>
 
@@ -107,7 +103,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
               <ExpenseAttachments
                 expenseId={expense.id}
                 canEdit={canEditAttachments}
-                attachments={expense.attachments.map((a) => ({ ...a, uploadedAt: a.uploadedAt.toISOString() }))}
+                attachments={expense.attachments.map((a) => ({ ...a, fileSizeBytes: a.fileSizeBytes !== null ? Number(a.fileSizeBytes) : null, uploadedAt: a.uploadedAt.toISOString() }))}
               />
             </CardContent>
           </Card>

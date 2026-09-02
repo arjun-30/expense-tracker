@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { createSessionToken, setSessionCookie, clearSessionCookie, getSession } from "@/lib/session";
 import { audit } from "@/lib/audit";
+import { loadRolesAndPermissions } from "@/lib/auth/permissions";
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -68,16 +69,21 @@ export async function loginAction(_prevState: LoginState, formData: FormData): P
     data: { failedLoginAttempts: 0, lockedUntil: null },
   });
 
+  const { roles, roleIds, permissions } = await loadRolesAndPermissions(user.id);
+
   const token = await createSessionToken({
     sub: user.id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    companyId: user.companyId,
     departmentId: user.departmentId,
+    roles,
+    roleIds,
+    permissions,
   });
   await setSessionCookie(token);
 
-  await audit({ userId: user.id, action: "LOGIN", module: "auth", recordId: user.id });
+  await audit({ companyId: user.companyId, userId: user.id, action: "LOGIN", entityType: "User", entityId: user.id });
 
   redirect("/dashboard");
 }
@@ -86,7 +92,7 @@ export async function logoutAction(): Promise<void> {
   const session = await getSession();
   await clearSessionCookie();
   if (session) {
-    await audit({ userId: session.sub, action: "LOGOUT", module: "auth", recordId: session.sub });
+    await audit({ companyId: session.companyId, userId: session.sub, action: "LOGOUT", entityType: "User", entityId: session.sub });
   }
   redirect("/login");
 }

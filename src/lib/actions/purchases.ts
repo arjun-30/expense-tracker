@@ -4,18 +4,18 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { requireRole } from "@/lib/rbac";
-import { Role } from "@/generated/prisma/enums";
+import { requirePermission } from "@/lib/rbac";
+import { ROLES } from "@/lib/rbac-client";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { nextSequenceNumber, withSequenceRetry } from "@/lib/services/sequence";
 import type { ActionResult } from "@/lib/actions/expenses";
 
-const PURCHASE_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.PURCHASE_MANAGER];
-const PAYMENT_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ACCOUNTS];
+const PURCHASE_PERMISSIONS = ["purchases.manage"];
+const PAYMENT_PERMISSIONS = ["payments.create"];
 
 const poItemSchema = z.object({
-  sparePartId: z.string().optional().nullable(),
+  consumableId: z.string().optional().nullable(),
   description: z.string().min(1),
   quantity: z.coerce.number().positive(),
   unitPrice: z.coerce.number().min(0),
@@ -31,7 +31,7 @@ export type PurchaseOrderInput = z.infer<typeof poSchema>;
 
 export async function createPurchaseOrderAction(input: PurchaseOrderInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, PURCHASE_ROLES);
+  requirePermission(session, PURCHASE_PERMISSIONS);
   const parsed = poSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
@@ -47,14 +47,15 @@ export async function createPurchaseOrderAction(input: PurchaseOrderInput): Prom
       const poNumber = await nextSequenceNumber(tx.purchaseOrder, "PO");
       return tx.purchaseOrder.create({
         data: {
+          companyId: session.companyId,
           poNumber,
           vendorId: data.vendorId,
           expectedDelivery: data.expectedDelivery ?? null,
           totalAmount,
           createdById: session.sub,
           status: "ORDERED",
-          items: { create: itemsWithTotals.map(({ sparePartId, description, quantity, unitPrice, gstPercent, total }) => ({
-            sparePartId: sparePartId || null,
+          items: { create: itemsWithTotals.map(({ consumableId, description, quantity, unitPrice, gstPercent, total }) => ({
+            consumableId: consumableId || null,
             description,
             quantity,
             unitPrice,
@@ -66,14 +67,14 @@ export async function createPurchaseOrderAction(input: PurchaseOrderInput): Prom
     })
   );
 
-  await audit({ userId: session.sub, action: "CREATE", module: "purchases", recordId: po.id, newValue: po });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "PurchaseOrder", entityId: po.id, newValue: po });
   revalidatePath("/purchases");
   return { success: true, id: po.id };
 }
 
 export async function receiveGoodsAction(purchaseOrderId: string): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, PURCHASE_ROLES);
+  requirePermission(session, PURCHASE_PERMISSIONS);
 
   const po = await prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId }, include: { items: true } });
   if (!po) return { success: false, error: "Purchase order not found" };
@@ -89,17 +90,18 @@ export async function receiveGoodsAction(purchaseOrderId: string): Promise<Actio
         where: { id: item.id },
         data: { receivedQuantity: item.quantity },
       });
-      if (item.sparePartId) {
-        await tx.sparePart.update({
-          where: { id: item.sparePartId },
+      if (item.consumableId) {
+        await tx.consumable.update({
+          where: { id: item.consumableId },
           data: { currentStock: { increment: remaining } },
         });
-        await tx.inventoryTransaction.create({
+        await tx.consumableStockMovement.create({
           data: {
-            sparePartId: item.sparePartId,
-            type: "PURCHASE",
+            consumableId: item.consumableId,
+            movementType: "PURCHASE",
             quantity: remaining,
-            purchaseOrderId: po.id,
+            referenceType: "purchase_order",
+            referenceId: po.id,
             unitCost: item.unitPrice,
             totalCost: remaining * Number(item.unitPrice),
             performedById: session.sub,
@@ -109,86 +111,44 @@ export async function receiveGoodsAction(purchaseOrderId: string): Promise<Actio
     }
     await tx.purchaseOrder.update({
       where: { id: po.id },
-      data: { status: "RECEIVED", actualDelivery: new Date() },
+      data: { status: "RECEIVED" },
     });
   });
 
-  await audit({ userId: session.sub, action: "RECEIVE_GOODS", module: "purchases", recordId: po.id });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "RECEIVE_GOODS", entityType: "PurchaseOrder", entityId: po.id });
   revalidatePath("/purchases");
   revalidatePath("/spare-parts");
   return { success: true, id: po.id };
 }
 
-const invoiceSchema = z.object({
-  vendorId: z.string().min(1),
-  purchaseOrderId: z.string().optional().nullable(),
-  invoiceNumber: z.string().min(1),
-  amount: z.coerce.number().positive(),
-  taxAmount: z.coerce.number().min(0).default(0),
-  invoiceDate: z.coerce.date(),
-  dueDate: z.coerce.date().optional().nullable(),
-});
-export type InvoiceInput = z.infer<typeof invoiceSchema>;
-
-export async function createInvoiceAction(input: InvoiceInput): Promise<ActionResult> {
-  const session = await requireSession();
-  requireRole(session, [...PURCHASE_ROLES, Role.ACCOUNTS]);
-  const parsed = invoiceSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const data = parsed.data;
-
-  const existing = await prisma.invoice.findUnique({
-    where: { vendorId_invoiceNumber: { vendorId: data.vendorId, invoiceNumber: data.invoiceNumber } },
-  });
-  if (existing) return { success: false, error: "This invoice number already exists for this vendor" };
-
-  const invoice = await prisma.invoice.create({
-    data: {
-      vendorId: data.vendorId,
-      purchaseOrderId: data.purchaseOrderId || null,
-      invoiceNumber: data.invoiceNumber,
-      amount: data.amount,
-      taxAmount: data.taxAmount,
-      totalAmount: data.amount + data.taxAmount,
-      invoiceDate: data.invoiceDate,
-      dueDate: data.dueDate ?? null,
-    },
-  });
-
-  await audit({ userId: session.sub, action: "CREATE", module: "invoices", recordId: invoice.id, newValue: invoice });
-  revalidatePath("/purchases");
-  revalidatePath("/payments");
-  return { success: true, id: invoice.id };
-}
-
+// Invoicing was dropped entirely (OPEN_DECISIONS.md #5) — payments link
+// directly to expenses and vendors, with no invoice step in between.
 const paymentSchema = z.object({
   vendorId: z.string().min(1),
-  invoiceId: z.string().optional().nullable(),
+  expenseId: z.string().optional().nullable(),
   amount: z.coerce.number().positive(),
   paymentDate: z.coerce.date(),
   method: z.enum(["CASH", "UPI", "BANK_TRANSFER", "NEFT", "RTGS", "CHEQUE", "CREDIT"]),
   referenceNumber: z.string().optional().nullable(),
-  bank: z.string().optional().nullable(),
-  remarks: z.string().optional().nullable(),
 });
 export type PaymentInput = z.infer<typeof paymentSchema>;
 
 export async function createPaymentAction(input: PaymentInput): Promise<ActionResult> {
   const session = await requireSession();
-  requireRole(session, PAYMENT_ROLES);
+  requirePermission(session, PAYMENT_PERMISSIONS);
   const parsed = paymentSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
 
-  let invoice = null;
-  if (data.invoiceId) {
-    invoice = await prisma.invoice.findUnique({ where: { id: data.invoiceId }, include: { payments: true } });
-    if (!invoice) return { success: false, error: "Invoice not found" };
-    const alreadyPaid = invoice.payments
+  let expense = null;
+  if (data.expenseId) {
+    expense = await prisma.expense.findUnique({ where: { id: data.expenseId }, include: { payments: true } });
+    if (!expense) return { success: false, error: "Expense not found" };
+    const alreadyPaid = expense.payments
       .filter((p) => p.status === "PAID")
       .reduce((sum, p) => sum + Number(p.amount), 0);
-    if (alreadyPaid + data.amount > Number(invoice.totalAmount) + 0.01) {
-      return { success: false, error: "Payment amount exceeds the outstanding invoice balance" };
+    if (alreadyPaid + data.amount > Number(expense.totalAmount) + 0.01) {
+      return { success: false, error: "Payment amount exceeds the outstanding expense balance" };
     }
   }
 
@@ -197,15 +157,14 @@ export async function createPaymentAction(input: PaymentInput): Promise<ActionRe
       const paymentNumber = await nextSequenceNumber(tx.payment, "PAY");
       return tx.payment.create({
         data: {
+          companyId: session.companyId,
           paymentNumber,
           vendorId: data.vendorId,
-          invoiceId: data.invoiceId || null,
+          expenseId: data.expenseId || null,
           amount: data.amount,
           paymentDate: data.paymentDate,
           method: data.method,
           referenceNumber: data.referenceNumber || null,
-          bank: data.bank || null,
-          remarks: data.remarks || null,
           status: "PAID",
           createdById: session.sub,
         },
@@ -213,17 +172,10 @@ export async function createPaymentAction(input: PaymentInput): Promise<ActionRe
     })
   );
 
-  if (invoice) {
-    const totalPaid = invoice.payments
-      .filter((p) => p.status === "PAID")
-      .reduce((sum, p) => sum + Number(p.amount), 0) + data.amount;
-    const newStatus = totalPaid >= Number(invoice.totalAmount) - 0.01 ? "PAID" : "PARTIALLY_PAID";
-    await prisma.invoice.update({ where: { id: invoice.id }, data: { status: newStatus } });
-  }
-
-  await audit({ userId: session.sub, action: "CREATE", module: "payments", recordId: payment.id, newValue: payment });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Payment", entityId: payment.id, newValue: payment });
   await notify({
-    role: Role.ADMIN,
+    companyId: session.companyId,
+    roleName: ROLES.ADMIN,
     type: "pending_payment",
     title: "Payment recorded",
     message: `Payment ${payment.paymentNumber} of ₹${data.amount.toLocaleString("en-IN")} recorded.`,

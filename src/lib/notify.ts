@@ -1,12 +1,15 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { AlertSeverity, Role } from "@/generated/prisma/enums";
+import { NotificationSeverity } from "@/generated/prisma/enums";
 
 interface NotifyParams {
+  companyId: string;
   userId?: string;
-  role?: Role;
+  /** Role name (e.g. ROLES.ADMIN) to notify every holder of that role — resolved
+   * to the company's `roles.id` via the unique (companyId, name) index. */
+  roleName?: string;
   type: string;
-  severity?: AlertSeverity;
+  severity?: NotificationSeverity;
   title: string;
   message: string;
   entityType?: string;
@@ -20,16 +23,25 @@ interface NotifyParams {
  * call sites.
  */
 function sendEmailStub(params: NotifyParams) {
-  console.log(`[email-stub] to=${params.userId ?? params.role ?? "?"} :: ${params.title} — ${params.message}`);
+  console.log(`[email-stub] to=${params.userId ?? params.roleName ?? "?"} :: ${params.title} — ${params.message}`);
 }
 
 export async function notify(params: NotifyParams) {
+  let roleId: string | undefined;
+  if (params.roleName) {
+    const role = await prisma.role.findUnique({
+      where: { companyId_name: { companyId: params.companyId, name: params.roleName } },
+    });
+    roleId = role?.id;
+  }
+
   await prisma.notification.create({
     data: {
+      companyId: params.companyId,
       userId: params.userId,
-      role: params.role,
+      roleId,
       type: params.type,
-      severity: params.severity ?? AlertSeverity.INFO,
+      severity: params.severity ?? NotificationSeverity.INFO,
       title: params.title,
       message: params.message,
       entityType: params.entityType,

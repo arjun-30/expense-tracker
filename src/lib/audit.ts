@@ -2,10 +2,11 @@ import "server-only";
 import { prisma } from "@/lib/db";
 
 interface AuditParams {
+  companyId: string;
   userId: string | null;
   action: string;
-  module: string;
-  recordId?: string;
+  entityType: string;
+  entityId: string;
   oldValue?: unknown;
   newValue?: unknown;
 }
@@ -18,10 +19,11 @@ interface AuditParams {
 export async function audit(params: AuditParams): Promise<void> {
   await prisma.auditLog.create({
     data: {
+      companyId: params.companyId,
       userId: params.userId,
       action: params.action,
-      module: params.module,
-      recordId: params.recordId,
+      entityType: params.entityType,
+      entityId: params.entityId,
       oldValue: params.oldValue === undefined ? undefined : JSON.parse(JSON.stringify(params.oldValue)),
       newValue: params.newValue === undefined ? undefined : JSON.parse(JSON.stringify(params.newValue)),
     },

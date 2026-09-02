@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { budgetUtilizationRatio, percentChange } from "@/lib/services/calculations";
+import { actualSpendForAllocation } from "@/lib/services/budgets";
 import { ExpenseStatus } from "@/generated/prisma/enums";
 
 const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
@@ -16,7 +17,7 @@ function monthBounds(offsetMonths = 0) {
   return { start, end };
 }
 
-export async function getKpis() {
+export async function getKpis(companyId: string) {
   const { start: thisMonthStart, end: thisMonthEnd } = monthBounds(0);
   const { start: lastMonthStart, end: lastMonthEnd } = monthBounds(-1);
 
@@ -29,59 +30,54 @@ export async function getKpis() {
     fuelAgg,
     maintenanceAgg,
     transportAgg,
-    spareAgg,
+    consumablesAgg,
     budgets,
   ] = await Promise.all([
-    prisma.expense.aggregate({ where: { status: { in: FINALIZED } }, _sum: { totalAmount: true } }),
+    prisma.expense.aggregate({ where: { companyId, status: { in: FINALIZED } }, _sum: { totalAmount: true } }),
     prisma.expense.aggregate({
-      where: { status: { in: FINALIZED }, date: { gte: thisMonthStart, lt: thisMonthEnd } },
+      where: { companyId, status: { in: FINALIZED }, expenseDate: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalAmount: true },
     }),
     prisma.expense.aggregate({
-      where: { status: { in: FINALIZED }, date: { gte: lastMonthStart, lt: lastMonthEnd } },
+      where: { companyId, status: { in: FINALIZED }, expenseDate: { gte: lastMonthStart, lt: lastMonthEnd } },
       _sum: { totalAmount: true },
     }),
-    prisma.expense.count({ where: { status: { in: ["SUBMITTED", "UNDER_REVIEW"] } } }),
+    prisma.expense.count({ where: { companyId, status: { in: ["SUBMITTED", "UNDER_REVIEW"] } } }),
+    // Approved-but-not-yet-paid stands in for "outstanding payments" now that
+    // Expense no longer carries its own paymentStatus (see prisma/SCHEMA_MIGRATION_NOTES.md §2).
     prisma.expense.aggregate({
-      where: { status: "APPROVED", paymentStatus: { in: ["PENDING", "PARTIALLY_PAID"] } },
+      where: { companyId, status: "APPROVED" },
       _sum: { totalAmount: true },
     }),
     prisma.fuelTransaction.aggregate({
-      where: { date: { gte: thisMonthStart, lt: thisMonthEnd } },
+      where: { vehicle: { companyId }, date: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalAmount: true },
     }),
     prisma.maintenanceRecord.aggregate({
-      where: { date: { gte: thisMonthStart, lt: thisMonthEnd } },
+      where: { machine: { companyId }, createdAt: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalCost: true },
     }),
     prisma.transportTrip.aggregate({
-      where: { date: { gte: thisMonthStart, lt: thisMonthEnd } },
+      where: { companyId, date: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalCost: true },
     }),
-    prisma.inventoryTransaction.aggregate({
-      where: { type: "PURCHASE", createdAt: { gte: thisMonthStart, lt: thisMonthEnd } },
+    prisma.consumableStockMovement.aggregate({
+      where: { movementType: "PURCHASE", consumable: { companyId }, movementDate: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalCost: true },
     }),
     prisma.budget.findMany({
-      where: { periodStart: { lte: thisMonthEnd }, periodEnd: { gte: thisMonthStart } },
+      where: { companyId, periodStart: { lte: thisMonthEnd }, periodEnd: { gte: thisMonthStart } },
+      include: { allocations: true },
     }),
   ]);
 
   let budgetTotal = 0;
   let budgetActual = 0;
   for (const b of budgets) {
-    budgetTotal += toNumber(b.amount);
-    const actual = await prisma.expense.aggregate({
-      where: {
-        status: { in: FINALIZED },
-        date: { gte: b.periodStart, lte: b.periodEnd },
-        ...(b.departmentId ? { departmentId: b.departmentId } : {}),
-        ...(b.categoryId ? { categoryId: b.categoryId } : {}),
-        ...(b.costCenterId ? { costCenterId: b.costCenterId } : {}),
-      },
-      _sum: { totalAmount: true },
-    });
-    budgetActual += toNumber(actual._sum?.totalAmount);
+    budgetTotal += toNumber(b.totalAmount);
+    for (const alloc of b.allocations) {
+      budgetActual += await actualSpendForAllocation(companyId, alloc, b.periodStart, b.periodEnd);
+    }
   }
 
   const totalExpenses = toNumber(totalExpensesAgg._sum?.totalAmount);
@@ -97,19 +93,20 @@ export async function getKpis() {
     fuelExpensesThisMonth: toNumber(fuelAgg._sum?.totalAmount),
     maintenanceExpensesThisMonth: toNumber(maintenanceAgg._sum?.totalCost),
     transportExpensesThisMonth: toNumber(transportAgg._sum?.totalCost),
-    sparePartsExpensesThisMonth: toNumber(spareAgg._sum?.totalCost),
+    sparePartsExpensesThisMonth: toNumber(consumablesAgg._sum?.totalCost),
     budgetUtilizationPct: budgetUtilizationRatio(budgetTotal, budgetActual),
     budgetTotal,
     budgetActual,
   };
 }
 
-export async function getExpenseTrend(months = 12) {
+export async function getExpenseTrend(companyId: string, months = 12) {
   const rows = await prisma.$queryRaw<{ month: Date; total: number }[]>`
-    SELECT date_trunc('month', "date") AS month, SUM("totalAmount")::float AS total
-    FROM "Expense"
-    WHERE "status" IN ('APPROVED', 'PAID')
-      AND "date" >= (date_trunc('month', now()) - (${months - 1} || ' months')::interval)
+    SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
+    FROM "expenses"
+    WHERE "company_id" = ${companyId}
+      AND "status" IN ('APPROVED', 'PAID')
+      AND "expense_date" >= (date_trunc('month', now()) - (${months - 1} || ' months')::interval)
     GROUP BY 1
     ORDER BY 1
   `;
@@ -119,10 +116,10 @@ export async function getExpenseTrend(months = 12) {
   }));
 }
 
-export async function getExpenseByCategory() {
+export async function getExpenseByCategory(companyId: string) {
   const grouped = await prisma.expense.groupBy({
     by: ["categoryId"],
-    where: { status: { in: FINALIZED } },
+    where: { companyId, status: { in: FINALIZED } },
     _sum: { totalAmount: true },
   });
   const categories = await prisma.expenseCategory.findMany({
@@ -134,10 +131,10 @@ export async function getExpenseByCategory() {
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getDepartmentSpending() {
+export async function getDepartmentSpending(companyId: string) {
   const grouped = await prisma.expense.groupBy({
     by: ["departmentId"],
-    where: { status: { in: FINALIZED } },
+    where: { companyId, status: { in: FINALIZED } },
     _sum: { totalAmount: true },
   });
   const departments = await prisma.department.findMany({
@@ -149,10 +146,10 @@ export async function getDepartmentSpending() {
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getTopVendors(limit = 5) {
+export async function getTopVendors(companyId: string, limit = 5) {
   const grouped = await prisma.expense.groupBy({
     by: ["vendorId"],
-    where: { status: { in: FINALIZED }, vendorId: { not: null } },
+    where: { companyId, status: { in: FINALIZED }, vendorId: { not: null } },
     _sum: { totalAmount: true },
   });
   const ids = grouped.map((g) => g.vendorId).filter((v): v is string => !!v);
@@ -164,9 +161,10 @@ export async function getTopVendors(limit = 5) {
     .slice(0, limit);
 }
 
-export async function getMachineMaintenanceCost(limit = 5) {
+export async function getMachineMaintenanceCost(companyId: string, limit = 5) {
   const grouped = await prisma.maintenanceRecord.groupBy({
     by: ["machineId"],
+    where: { machine: { companyId } },
     _sum: { totalCost: true },
   });
   const machines = await prisma.machine.findMany({ where: { id: { in: grouped.map((g) => g.machineId) } } });
@@ -177,9 +175,10 @@ export async function getMachineMaintenanceCost(limit = 5) {
     .slice(0, limit);
 }
 
-export async function getVehicleFuelCost(limit = 5) {
+export async function getVehicleFuelCost(companyId: string, limit = 5) {
   const grouped = await prisma.fuelTransaction.groupBy({
     by: ["vehicleId"],
+    where: { vehicle: { companyId } },
     _sum: { totalAmount: true },
   });
   const vehicles = await prisma.vehicle.findMany({ where: { id: { in: grouped.map((g) => g.vehicleId) } } });
@@ -190,28 +189,22 @@ export async function getVehicleFuelCost(limit = 5) {
     .slice(0, limit);
 }
 
-export async function getBudgetVsActual() {
+export async function getBudgetVsActual(companyId: string) {
   const { start, end } = monthBounds(0);
   const budgets = await prisma.budget.findMany({
-    where: { periodStart: { lte: end }, periodEnd: { gte: start } },
-    include: { department: true, category: true, costCenter: true },
+    where: { companyId, periodStart: { lte: end }, periodEnd: { gte: start } },
+    include: { allocations: { include: { department: true, category: true, costCenter: true } } },
   });
   const rows = [];
   for (const b of budgets) {
-    const actual = await prisma.expense.aggregate({
-      where: {
-        status: { in: FINALIZED },
-        date: { gte: b.periodStart, lte: b.periodEnd },
-        ...(b.departmentId ? { departmentId: b.departmentId } : {}),
-        ...(b.categoryId ? { categoryId: b.categoryId } : {}),
-        ...(b.costCenterId ? { costCenterId: b.costCenterId } : {}),
-      },
-      _sum: { totalAmount: true },
-    });
+    let actual = 0;
+    for (const alloc of b.allocations) {
+      actual += await actualSpendForAllocation(companyId, alloc, b.periodStart, b.periodEnd);
+    }
     rows.push({
       name: b.name,
-      budget: toNumber(b.amount),
-      actual: toNumber(actual._sum?.totalAmount),
+      budget: toNumber(b.totalAmount),
+      actual,
     });
   }
   return rows;

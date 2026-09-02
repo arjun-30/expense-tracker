@@ -17,12 +17,11 @@ import { createMachineAction } from "@/lib/actions/maintenance";
 const schema = z.object({
   machineCode: z.string().min(1, "Required"),
   name: z.string().min(1, "Required"),
-  category: z.string().optional(),
   manufacturer: z.string().optional(),
   model: z.string().optional(),
   location: z.string().optional(),
   departmentId: z.string().optional(),
-  purchasePrice: z.number().min(0).optional(),
+  purchaseCost: z.number().min(0).optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -36,12 +35,11 @@ export function MachineFormDialog({ departments }: { departments: { id: string; 
     setSubmitting(true);
     const result = await createMachineAction({
       ...values,
-      category: values.category || null,
       manufacturer: values.manufacturer || null,
       model: values.model || null,
       location: values.location || null,
       departmentId: values.departmentId || null,
-      purchasePrice: values.purchasePrice ?? null,
+      purchaseCost: values.purchaseCost ?? null,
     });
     setSubmitting(false);
     if (!result.success) { toast.error(result.error ?? "Something went wrong"); return; }
@@ -67,10 +65,6 @@ export function MachineFormDialog({ departments }: { departments: { id: string; 
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="space-y-1">
-            <Label htmlFor="category">Category</Label>
-            <Input id="category" {...register("category")} />
-          </div>
-          <div className="space-y-1">
             <Label htmlFor="location">Location</Label>
             <Input id="location" {...register("location")} />
           </div>
@@ -92,8 +86,8 @@ export function MachineFormDialog({ departments }: { departments: { id: string; 
             )} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="purchasePrice">Purchase price (₹)</Label>
-            <Input id="purchasePrice" type="number" step="0.01" {...register("purchasePrice", { valueAsNumber: true })} />
+            <Label htmlFor="purchaseCost">Purchase price (₹)</Label>
+            <Input id="purchaseCost" type="number" step="0.01" {...register("purchaseCost", { valueAsNumber: true })} />
           </div>
           <DialogFooter className="col-span-2">
             <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : "Save machine"}</Button>

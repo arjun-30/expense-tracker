@@ -9,11 +9,11 @@ import { getTransportationReportRows } from "@/lib/services/reports";
 import { formatDate, formatINR } from "@/lib/format";
 
 export default async function TransportationReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { allowed } = await guardModule("reports");
+  const { session, allowed } = await guardModule("reports");
   if (!allowed) return <AccessRestricted />;
 
   const sp = await searchParams;
-  const rows = await getTransportationReportRows({ from: sp.from, to: sp.to });
+  const rows = await getTransportationReportRows(session.companyId, { from: sp.from, to: sp.to });
 
   return (
     <div>
@@ -28,7 +28,7 @@ export default async function TransportationReportPage({ searchParams }: { searc
           <TableHeader>
             <TableRow>
               <TableHead>Trip #</TableHead><TableHead>Date</TableHead><TableHead>Vehicle</TableHead><TableHead>Route</TableHead>
-              <TableHead className="text-right">Total Cost</TableHead><TableHead className="text-right">Cost/kg</TableHead>
+              <TableHead className="text-right">Total Cost</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -39,10 +39,9 @@ export default async function TransportationReportPage({ searchParams }: { searc
                 <TableCell>{r.vehicle}</TableCell>
                 <TableCell>{r.source} → {r.destination}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(r.totalCost)}</TableCell>
-                <TableCell className="text-right tabular-nums">{r.costPerKg ? formatINR(Number(r.costPerKg), true) : "—"}</TableCell>
               </TableRow>
             ))}
-            {rows.length === 0 && <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">No data.</TableCell></TableRow>}
+            {rows.length === 0 && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No data.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </div>

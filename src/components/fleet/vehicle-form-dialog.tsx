@@ -20,7 +20,6 @@ const schema = z.object({
   manufacturer: z.string().optional(),
   model: z.string().optional(),
   year: z.number().optional(),
-  driverId: z.string().optional(),
   departmentId: z.string().optional(),
   currentOdometer: z.number().min(0),
   insuranceExpiry: z.string().optional(),
@@ -29,7 +28,9 @@ const schema = z.object({
 });
 type FormValues = z.infer<typeof schema>;
 
-export function VehicleFormDialog({ drivers, departments }: { drivers: { id: string; name: string }[]; departments: { id: string; name: string }[] }) {
+// Vehicles have no standing driver assignment any more — drivers are
+// recorded per fuel transaction / trip instead (OPEN_DECISIONS.md #8).
+export function VehicleFormDialog({ departments }: { departments: { id: string; name: string }[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +46,6 @@ export function VehicleFormDialog({ drivers, departments }: { drivers: { id: str
       manufacturer: values.manufacturer || null,
       model: values.model || null,
       year: values.year || null,
-      driverId: values.driverId || null,
       departmentId: values.departmentId || null,
       insuranceExpiry: values.insuranceExpiry ? new Date(values.insuranceExpiry) : null,
       pollutionExpiry: values.pollutionExpiry ? new Date(values.pollutionExpiry) : null,
@@ -84,15 +84,6 @@ export function VehicleFormDialog({ drivers, departments }: { drivers: { id: str
           <div className="space-y-1">
             <Label htmlFor="currentOdometer">Current odometer (km)</Label>
             <Input id="currentOdometer" type="number" {...register("currentOdometer", { valueAsNumber: true })} />
-          </div>
-          <div className="space-y-1">
-            <Label>Driver</Label>
-            <Controller control={control} name="driverId" render={({ field }) => (
-              <Select onValueChange={field.onChange} value={field.value}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>{drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent>
-              </Select>
-            )} />
           </div>
           <div className="col-span-2 space-y-1">
             <Label>Department</Label>
