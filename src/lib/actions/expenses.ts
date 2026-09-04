@@ -324,7 +324,7 @@ export async function deleteAttachmentAction(attachmentId: string): Promise<Acti
     throw new ForbiddenError();
   }
 
-  await getStorageProvider().delete(attachment.storageKey);
+  await getStorageProvider().delete(attachment.storageKey, attachment.fileType);
   await prisma.expenseAttachment.delete({ where: { id: attachmentId } });
   await audit({ companyId: session.companyId, userId: session.sub, action: "DELETE_ATTACHMENT", entityType: "Expense", entityId: attachment.expenseId, oldValue: { fileName: attachment.fileName } });
   revalidatePath(`/expenses/${attachment.expenseId}`);

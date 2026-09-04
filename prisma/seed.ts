@@ -2,14 +2,57 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { v2 as cloudinary } from "cloudinary";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { ROLES } from "../src/lib/rbac-client";
 import { PERMISSIONS, ROLE_PERMISSIONS } from "../src/lib/auth/permission-catalog";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
+// Not imported from src/lib/storage.ts — that module is "server-only", which
+// this plain tsx script (run outside the Next.js server module graph) can't
+// resolve. A minimal, standalone Cloudinary call is duplicated here instead.
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 function hash(pw: string) {
   return bcrypt.hash(pw, 10);
+}
+
+/** A real, openable one-page PDF for demo expense attachments — built with
+ * pdf-lib (already a dependency, used the same way in src/lib/services/export.ts)
+ * rather than a hand-rolled byte template, so it's guaranteed spec-valid. */
+async function buildPlaceholderReceiptPdf(expenseNumber: string, totalAmount: number): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([320, 240]);
+  page.drawText("Sample Receipt", { x: 32, y: 190, size: 18, font });
+  page.drawText(`Expense: ${expenseNumber}`, { x: 32, y: 150, size: 12, font });
+  page.drawText(`Amount: Rs. ${totalAmount.toFixed(2)}`, { x: 32, y: 130, size: 12, font });
+  page.drawText("This is placeholder demo data, not a real invoice.", { x: 32, y: 90, size: 9, font });
+  return Buffer.from(await doc.save());
+}
+
+async function uploadSeedAttachment(buffer: Buffer, publicId: string): Promise<string | null> {
+  try {
+    const result = await new Promise<{ public_id: string }>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { public_id: publicId, resource_type: "raw", overwrite: true },
+        (error, uploadResult) => (error || !uploadResult ? reject(error ?? new Error("upload failed")) : resolve(uploadResult))
+      );
+      stream.end(buffer);
+    });
+    return result.public_id;
+  } catch (err) {
+    // Cloudinary isn't configured (or is unreachable) — skip this attachment
+    // rather than seed a database row pointing at a file that doesn't exist.
+    console.warn(`  (skipping seed attachment ${publicId}: ${err instanceof Error ? err.message : err})`);
+    return null;
+  }
 }
 
 function daysAgo(n: number): Date {
@@ -384,15 +427,19 @@ async function main() {
         });
         paidExpenseIds.push({ id: expense.id, expenseNumber: expense.expenseNumber, total, vendorId });
       }
-      // A handful of sample attachments — demo placeholders, not real files.
+      // A handful of sample attachments — a real generated PDF actually
+      // uploaded to Cloudinary, so demo links work instead of 404ing.
       if (i % 12 === 0) {
+        const pdfBuffer = await buildPlaceholderReceiptPdf(expenseNumber, total);
+        const storageKey = await uploadSeedAttachment(pdfBuffer, `mecs_seed_${expenseNumber}`);
+        if (!storageKey) continue;
         await prisma.expenseAttachment.create({
           data: {
             expenseId: expense.id,
             fileName: `receipt-${expenseNumber}.pdf`,
-            storageKey: `seed-attachment-${expenseNumber}.pdf`,
+            storageKey,
             fileType: "application/pdf",
-            fileSizeBytes: BigInt(Math.round(randomBetween(20_000, 400_000))),
+            fileSizeBytes: BigInt(pdfBuffer.byteLength),
             uploadedById: users[ROLES.EMPLOYEE].id,
           },
         });
