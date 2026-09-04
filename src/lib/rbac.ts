@@ -8,19 +8,40 @@ export function isAdminRole(session: { roles: string[] }): boolean {
   return hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN);
 }
 
+/** Permission codes whose holder is responsible for processing expenses company-wide
+ * (verification, approval, rejection, payment) rather than only within their own
+ * department — e.g. ACCOUNTS reviews and pays expenses submitted by every department. */
+const COMPANY_WIDE_EXPENSE_PERMISSIONS = ["expenses.verify", "expenses.approve", "expenses.reject", "expenses.mark_paid"];
+
+/** True if `session` holds any permission that makes it responsible for handling
+ * expenses across the whole company, not just its own department. */
+function hasCompanyWideExpenseAccess(session: { permissions: string[] }): boolean {
+  return hasPermission(session, ...COMPANY_WIDE_EXPENSE_PERMISSIONS);
+}
+
 /** Prisma `where` clause restricting expense visibility to what `session` is allowed to see:
- * admins see everything, employees see only their own expenses, everyone else is
+ * admins see everything, employees see only their own expenses, roles holding a
+ * company-wide expense-handling permission see every department, and everyone else is
  * scoped to their own department. */
 export function expenseVisibilityWhere(session: SessionPayload) {
   if (isAdminRole(session)) return {};
   if (hasRole(session, ROLES.EMPLOYEE)) return { employeeId: session.sub };
+  // Company-wide expense handling (e.g. ACCOUNTS verifying/paying expenses) requires
+  // seeing expenses from every department, not just the reviewer's own.
+  if (hasCompanyWideExpenseAccess(session)) return {};
   return { departmentId: session.departmentId ?? "__no_department__" };
 }
 
 /** Whether `session` is allowed to view the given expense (same rules as expenseVisibilityWhere). */
-export function canViewExpense(session: SessionPayload, expense: { employeeId: string; departmentId: string }): boolean {
+export function canViewExpense(
+  session: SessionPayload,
+  expense: { employeeId: string; departmentId: string; companyId: string }
+): boolean {
+  // Never allow cross-tenant visibility, regardless of role or permission.
+  if (expense.companyId !== session.companyId) return false;
   if (isAdminRole(session)) return true;
   if (hasRole(session, ROLES.EMPLOYEE)) return expense.employeeId === session.sub;
+  if (hasCompanyWideExpenseAccess(session)) return true;
   return expense.departmentId === session.departmentId;
 }
 

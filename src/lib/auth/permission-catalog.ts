@@ -65,6 +65,11 @@ export const PERMISSIONS: PermissionDef[] = [
 
   { code: "users.manage", module: "users", description: "Manage users and role assignments" },
   { code: "settings.manage", module: "settings", description: "Manage departments, cost centers, categories, and notification rules" },
+
+  // Deliberately excluded from ADMIN below, same as users.manage/settings.manage:
+  // a role holding this can redefine what ANY role (including its own) is allowed
+  // to do, so it's the most privilege-sensitive permission in the system.
+  { code: "roles.manage", module: "roles", description: "Create, edit, and delete roles and their permission assignments" },
 ];
 
 const ALL_CODES = PERMISSIONS.map((p) => p.code);
@@ -80,10 +85,10 @@ function except(...codes: string[]): string[] {
  * no real access-control history to preserve, per OPEN_DECISIONS.md #2. */
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
   [ROLES.SUPER_ADMIN]: ALL_CODES,
-  [ROLES.ADMIN]: except("users.manage", "settings.manage", "audit_logs.view"),
+  [ROLES.ADMIN]: except("users.manage", "settings.manage", "audit_logs.view", "roles.manage"),
   [ROLES.ACCOUNTS]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.verify", "expenses.reject", "expenses.mark_paid", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit", "expenses.review", "expenses.verify", "expenses.reject", "expenses.mark_paid", "expenses.cancel",
     "payments.view", "payments.create",
     "vendors.view", "vendors.manage",
     "purchases.view", "purchases.manage",
