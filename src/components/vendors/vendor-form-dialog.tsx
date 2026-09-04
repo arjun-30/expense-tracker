@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ const schema = z.object({
   pan: z.string().optional(),
   category: z.string().optional(),
   paymentTerms: z.string().optional(),
+  status: z.enum(["ACTIVE", "INACTIVE"]),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -45,14 +47,17 @@ export function VendorFormDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
+  const { register, control, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: defaultValues ?? {},
+    // New vendors default to ACTIVE; editing an existing one always
+    // pre-fills its actual current status (passed in via defaultValues) —
+    // never silently forced back to ACTIVE on save.
+    defaultValues: { status: "ACTIVE", ...defaultValues },
   });
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
-    const input: VendorInput = { ...values, status: "ACTIVE" };
+    const input: VendorInput = values;
     const result = vendorId ? await updateVendorAction(vendorId, input) : await createVendorAction(input);
     setSubmitting(false);
     if (!result.success) {
@@ -107,6 +112,18 @@ export function VendorFormDialog({
           <div className="space-y-1">
             <Label htmlFor="pan">PAN</Label>
             <Input id="pan" {...register("pan")} />
+          </div>
+          <div className="space-y-1">
+            <Label>Status</Label>
+            <Controller control={control} name="status" render={({ field }) => (
+              <Select onValueChange={field.onChange} value={field.value}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            )} />
           </div>
           <div className="space-y-1 sm:col-span-2">
             <Label htmlFor="paymentTerms">Payment terms</Label>

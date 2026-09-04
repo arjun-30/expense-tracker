@@ -66,6 +66,7 @@ export default async function VendorsPage() {
                         pan: v.pan ?? undefined,
                         category: v.category ?? undefined,
                         paymentTerms: v.paymentTerms ?? undefined,
+                        status: v.isActive ? "ACTIVE" : "INACTIVE",
                       }}
                     />
                   </TableCell>
