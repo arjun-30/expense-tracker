@@ -37,6 +37,7 @@ export const MODULE_ACCESS: Record<string, RoleName[]> = {
   notifications: ALL_ROLES,
   auditLogs: [ROLES.SUPER_ADMIN],
   usersRoles: [ROLES.SUPER_ADMIN],
+  roles: [ROLES.SUPER_ADMIN],
   settings: [ROLES.SUPER_ADMIN],
 };
 

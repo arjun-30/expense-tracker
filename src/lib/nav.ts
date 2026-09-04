@@ -15,6 +15,7 @@ import {
   Bell,
   ScrollText,
   Users,
+  ShieldCheck,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -78,6 +79,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Administration",
     items: [
       { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
+      { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
       { key: "settings", label: "Settings", href: "/settings", icon: Settings },
     ],
   },
