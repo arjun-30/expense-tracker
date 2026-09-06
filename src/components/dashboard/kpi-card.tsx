@@ -9,7 +9,9 @@ export function KpiCard({
   icon: Icon,
   deltaPct,
   deltaGoodDirection = "down",
+  deltaLabel = "vs previous month",
   formatAsCurrency = true,
+  precise = false,
   subtext,
 }: {
   label: string;
@@ -18,7 +20,11 @@ export function KpiCard({
   deltaPct?: number | null;
   /** whether a positive delta is "good" (e.g. lower spend is good -> 'down') */
   deltaGoodDirection?: "up" | "down";
+  /** trailing text after the delta percentage, e.g. "vs last month" */
+  deltaLabel?: string;
   formatAsCurrency?: boolean;
+  /** show currency with paise instead of rounding to whole rupees, for small per-unit values */
+  precise?: boolean;
   subtext?: string;
 }) {
   const hasDelta = deltaPct !== undefined && deltaPct !== null && Number.isFinite(deltaPct);
@@ -35,12 +41,12 @@ export function KpiCard({
       </CardHeader>
       <CardContent>
         <div className="font-heading text-2xl font-semibold tabular-nums">
-          {formatAsCurrency ? formatINR(value) : value.toLocaleString("en-IN")}
+          {formatAsCurrency ? formatINR(value, precise) : value.toLocaleString("en-IN")}
         </div>
         {hasDelta ? (
           <p className={cn("mt-1 flex items-center gap-1 text-xs font-medium", isGood ? "text-status-good" : "text-status-critical")}>
             {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-            {Math.abs(deltaPct!).toFixed(1)}% vs previous month
+            {Math.abs(deltaPct!).toFixed(1)}% {deltaLabel}
           </p>
         ) : subtext ? (
           <p className="mt-1 text-xs text-muted-foreground">{subtext}</p>

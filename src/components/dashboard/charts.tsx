@@ -85,6 +85,22 @@ export function RankingBarChart({ data, height = 260 }: { data: { name: string; 
   );
 }
 
+export function YoyTrendChart({ data }: { data: { month: string; thisYear: number; lastYear: number }[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+        <XAxis dataKey="month" tick={{ fontSize: 12, fill: AXIS_TEXT }} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={{ fontSize: 12, fill: AXIS_TEXT }} axisLine={false} tickLine={false} width={70} tickFormatter={(v) => formatINR(v)} />
+        <Tooltip content={<CurrencyTooltip />} cursor={{ fill: "var(--muted)" }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar dataKey="lastYear" name="Last Year" fill={GRID} radius={[4, 4, 0, 0]} maxBarSize={28} />
+        <Bar dataKey="thisYear" name="This Year" fill={SERIES_1} radius={[4, 4, 0, 0]} maxBarSize={28} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function BudgetVsActualChart({ data }: { data: { name: string; budget: number; actual: number }[] }) {
   if (data.length === 0) {
     return <p className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">No budgets configured for this period</p>;

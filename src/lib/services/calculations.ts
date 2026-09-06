@@ -52,6 +52,12 @@ export function percentChange(current: number, previous: number): number | null 
   return round3(((current - previous) / Math.abs(previous)) * 100);
 }
 
+/** Fleet/company-wide average, e.g. total maintenance cost / active machine count. */
+export function averagePerUnit(total: number, unitCount: number): number | null {
+  if (unitCount <= 0) return null;
+  return round2(total / unitCount);
+}
+
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }

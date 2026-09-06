@@ -1,10 +1,16 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { budgetUtilizationRatio, percentChange } from "@/lib/services/calculations";
+import { budgetUtilizationRatio, percentChange, fuelCostPerKm, averagePerUnit } from "@/lib/services/calculations";
 import { actualSpendForAllocation } from "@/lib/services/budgets";
-import { ExpenseStatus } from "@/generated/prisma/enums";
+import { ExpenseStatus, MachineStatus } from "@/generated/prisma/enums";
 
 const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
+
+// A dimension's current-month spend must swing at least this much off its
+// trailing 3-month average, and clear this floor, before it's surfaced as an
+// anomaly — keeps small/noisy categories from drowning out real spikes.
+const ANOMALY_THRESHOLD_PCT = 40;
+const ANOMALY_MIN_AMOUNT = 2000;
 
 function toNumber(d: unknown): number {
   return d === null || d === undefined ? 0 : Number(d);
@@ -208,4 +214,176 @@ export async function getBudgetVsActual(companyId: string) {
     });
   }
   return rows;
+}
+
+/**
+ * Rolling 12-month expense trend alongside the same 12 calendar months one
+ * year earlier, so the dashboard trend chart can show growth/contraction
+ * against last year rather than just the raw trailing line.
+ */
+export async function getExpenseTrendYoy(companyId: string, months = 12) {
+  const rows = await prisma.$queryRaw<{ month: Date; total: number }[]>`
+    SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
+    FROM "expenses"
+    WHERE "company_id" = ${companyId}
+      AND "status" IN ('APPROVED', 'PAID')
+      AND "expense_date" >= (date_trunc('month', now()) - (${months - 1 + 12} || ' months')::interval)
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  const byMonth = new Map<string, number>();
+  for (const r of rows) {
+    const d = new Date(r.month);
+    byMonth.set(`${d.getFullYear()}-${d.getMonth()}`, Number(r.total));
+  }
+
+  const now = new Date();
+  const out: { month: string; thisYear: number; lastYear: number }[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const current = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const priorYear = new Date(now.getFullYear() - 1, now.getMonth() - i, 1);
+    out.push({
+      month: current.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+      thisYear: byMonth.get(`${current.getFullYear()}-${current.getMonth()}`) ?? 0,
+      lastYear: byMonth.get(`${priorYear.getFullYear()}-${priorYear.getMonth()}`) ?? 0,
+    });
+  }
+  return out;
+}
+
+/** Fleet-wide cost-efficiency metrics for the current month, alongside their prior-month comparisons. */
+export async function getSpendEfficiencyKpis(companyId: string) {
+  const { start: thisStart, end: thisEnd } = monthBounds(0);
+  const { start: lastStart, end: lastEnd } = monthBounds(-1);
+
+  const [thisFuel, lastFuel, activeMachineCount, thisMaintenance, lastMaintenance] = await Promise.all([
+    prisma.fuelTransaction.aggregate({
+      where: { vehicle: { companyId }, date: { gte: thisStart, lt: thisEnd } },
+      _sum: { totalAmount: true, distanceTravelled: true },
+    }),
+    prisma.fuelTransaction.aggregate({
+      where: { vehicle: { companyId }, date: { gte: lastStart, lt: lastEnd } },
+      _sum: { totalAmount: true, distanceTravelled: true },
+    }),
+    prisma.machine.count({ where: { companyId, status: { not: MachineStatus.RETIRED } } }),
+    prisma.maintenanceRecord.aggregate({
+      where: { machine: { companyId }, createdAt: { gte: thisStart, lt: thisEnd } },
+      _sum: { totalCost: true },
+    }),
+    prisma.maintenanceRecord.aggregate({
+      where: { machine: { companyId }, createdAt: { gte: lastStart, lt: lastEnd } },
+      _sum: { totalCost: true },
+    }),
+  ]);
+
+  const fuelCostPerKmThisMonth = fuelCostPerKm(toNumber(thisFuel._sum?.totalAmount), toNumber(thisFuel._sum?.distanceTravelled));
+  const fuelCostPerKmLastMonth = fuelCostPerKm(toNumber(lastFuel._sum?.totalAmount), toNumber(lastFuel._sum?.distanceTravelled));
+
+  const maintenanceCostPerMachineThisMonth = averagePerUnit(toNumber(thisMaintenance._sum?.totalCost), activeMachineCount);
+  const maintenanceCostPerMachineLastMonth = averagePerUnit(toNumber(lastMaintenance._sum?.totalCost), activeMachineCount);
+
+  return {
+    fuelCostPerKm: fuelCostPerKmThisMonth,
+    fuelCostPerKmChangePct:
+      fuelCostPerKmThisMonth !== null && fuelCostPerKmLastMonth !== null ? percentChange(fuelCostPerKmThisMonth, fuelCostPerKmLastMonth) : null,
+    maintenanceCostPerMachine: maintenanceCostPerMachineThisMonth,
+    maintenanceCostPerMachineChangePct:
+      maintenanceCostPerMachineThisMonth !== null && maintenanceCostPerMachineLastMonth !== null
+        ? percentChange(maintenanceCostPerMachineThisMonth, maintenanceCostPerMachineLastMonth)
+        : null,
+    activeMachineCount,
+  };
+}
+
+async function categoryTotalsInWindow(companyId: string, start: Date, end: Date) {
+  const grouped = await prisma.expense.groupBy({
+    by: ["categoryId"],
+    where: { companyId, status: { in: FINALIZED }, expenseDate: { gte: start, lt: end } },
+    _sum: { totalAmount: true },
+  });
+  return new Map(grouped.map((g) => [g.categoryId, toNumber(g._sum?.totalAmount)]));
+}
+
+async function departmentTotalsInWindow(companyId: string, start: Date, end: Date) {
+  const grouped = await prisma.expense.groupBy({
+    by: ["departmentId"],
+    where: { companyId, status: { in: FINALIZED }, expenseDate: { gte: start, lt: end } },
+    _sum: { totalAmount: true },
+  });
+  return new Map(grouped.map((g) => [g.departmentId, toNumber(g._sum?.totalAmount)]));
+}
+
+async function vendorTotalsInWindow(companyId: string, start: Date, end: Date) {
+  const grouped = await prisma.expense.groupBy({
+    by: ["vendorId"],
+    where: { companyId, status: { in: FINALIZED }, vendorId: { not: null }, expenseDate: { gte: start, lt: end } },
+    _sum: { totalAmount: true },
+  });
+  return new Map(grouped.map((g) => [g.vendorId as string, toNumber(g._sum?.totalAmount)]));
+}
+
+export interface SpendAnomaly {
+  type: "Category" | "Department" | "Vendor";
+  name: string;
+  currentAmount: number;
+  trailingAvgAmount: number;
+  changePct: number;
+}
+
+/**
+ * Flags categories/departments/vendors whose current-month spend swings hard
+ * off their trailing 3-month average — a cheap stand-in for real forecasting
+ * that surfaces the spikes and drops worth a human look.
+ */
+export async function getSpendingAnomalies(companyId: string, limit = 8): Promise<SpendAnomaly[]> {
+  const { start: thisMonthStart, end: thisMonthEnd } = monthBounds(0);
+  const trailingStart = monthBounds(-3).start;
+
+  const [
+    currentByCategory,
+    trailingByCategory,
+    currentByDepartment,
+    trailingByDepartment,
+    currentByVendor,
+    trailingByVendor,
+  ] = await Promise.all([
+    categoryTotalsInWindow(companyId, thisMonthStart, thisMonthEnd),
+    categoryTotalsInWindow(companyId, trailingStart, thisMonthStart),
+    departmentTotalsInWindow(companyId, thisMonthStart, thisMonthEnd),
+    departmentTotalsInWindow(companyId, trailingStart, thisMonthStart),
+    vendorTotalsInWindow(companyId, thisMonthStart, thisMonthEnd),
+    vendorTotalsInWindow(companyId, trailingStart, thisMonthStart),
+  ]);
+
+  const [categories, departments, vendors] = await Promise.all([
+    prisma.expenseCategory.findMany({ where: { id: { in: [...new Set([...currentByCategory.keys(), ...trailingByCategory.keys()])] } } }),
+    prisma.department.findMany({ where: { id: { in: [...new Set([...currentByDepartment.keys(), ...trailingByDepartment.keys()])] } } }),
+    prisma.vendor.findMany({ where: { id: { in: [...new Set([...currentByVendor.keys(), ...trailingByVendor.keys()])] } } }),
+  ]);
+
+  const anomalies: SpendAnomaly[] = [
+    ...buildAnomalies("Category", currentByCategory, trailingByCategory, new Map(categories.map((c) => [c.id, c.name]))),
+    ...buildAnomalies("Department", currentByDepartment, trailingByDepartment, new Map(departments.map((d) => [d.id, d.name]))),
+    ...buildAnomalies("Vendor", currentByVendor, trailingByVendor, new Map(vendors.map((v) => [v.id, v.name]))),
+  ];
+
+  return anomalies.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct)).slice(0, limit);
+}
+
+function buildAnomalies(
+  type: SpendAnomaly["type"],
+  current: Map<string, number>,
+  trailing: Map<string, number>,
+  names: Map<string, string>,
+): SpendAnomaly[] {
+  const out: SpendAnomaly[] = [];
+  for (const [id, currentAmount] of current) {
+    if (currentAmount < ANOMALY_MIN_AMOUNT) continue;
+    const trailingAvgAmount = (trailing.get(id) ?? 0) / 3;
+    if (trailingAvgAmount <= 0) continue;
+    const changePct = percentChange(currentAmount, trailingAvgAmount);
+    if (changePct === null || Math.abs(changePct) < ANOMALY_THRESHOLD_PCT) continue;
+    out.push({ type, name: names.get(id) ?? "Unknown", currentAmount, trailingAvgAmount: Math.round(trailingAvgAmount * 100) / 100, changePct });
+  }
+  return out;
 }

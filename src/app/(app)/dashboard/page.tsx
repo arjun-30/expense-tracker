@@ -8,37 +8,57 @@ import {
   Route,
   PackageSearch,
   PiggyBank,
+  Gauge,
+  AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { TrendChart, RankingBarChart, BudgetVsActualChart } from "@/components/dashboard/charts";
+import { TrendChart, RankingBarChart, BudgetVsActualChart, YoyTrendChart } from "@/components/dashboard/charts";
+import { SpendingAnomalies } from "@/components/dashboard/spending-anomalies";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { guardModule } from "@/lib/guards";
 import {
   getKpis,
   getExpenseTrend,
+  getExpenseTrendYoy,
   getExpenseByCategory,
   getDepartmentSpending,
   getTopVendors,
   getMachineMaintenanceCost,
   getVehicleFuelCost,
   getBudgetVsActual,
+  getSpendEfficiencyKpis,
+  getSpendingAnomalies,
 } from "@/lib/services/dashboard";
 
 export default async function DashboardPage() {
   const { session } = await guardModule("dashboard");
   const companyId = session.companyId;
-  const [kpis, trend, byCategory, byDepartment, topVendors, machineCosts, vehicleFuel, budgetVsActual] =
-    await Promise.all([
-      getKpis(companyId),
-      getExpenseTrend(companyId, 12),
-      getExpenseByCategory(companyId),
-      getDepartmentSpending(companyId),
-      getTopVendors(companyId, 5),
-      getMachineMaintenanceCost(companyId, 5),
-      getVehicleFuelCost(companyId, 5),
-      getBudgetVsActual(companyId),
-    ]);
+  const [
+    kpis,
+    trend,
+    trendYoy,
+    byCategory,
+    byDepartment,
+    topVendors,
+    machineCosts,
+    vehicleFuel,
+    budgetVsActual,
+    efficiency,
+    anomalies,
+  ] = await Promise.all([
+    getKpis(companyId),
+    getExpenseTrend(companyId, 12),
+    getExpenseTrendYoy(companyId, 12),
+    getExpenseByCategory(companyId),
+    getDepartmentSpending(companyId),
+    getTopVendors(companyId, 5),
+    getMachineMaintenanceCost(companyId, 5),
+    getVehicleFuelCost(companyId, 5),
+    getBudgetVsActual(companyId),
+    getSpendEfficiencyKpis(companyId),
+    getSpendingAnomalies(companyId),
+  ]);
 
   // A company with no budgets configured for this period has
   // budgetUtilizationPct === null — compute the displayed 0% once, rather
@@ -71,6 +91,27 @@ export default async function DashboardPage() {
         <KpiCard label="Maintenance (this month)" value={kpis.maintenanceExpensesThisMonth} icon={Wrench} subtext="Labour + spares + other" />
         <KpiCard label="Transportation (this month)" value={kpis.transportExpensesThisMonth} icon={Route} subtext="Freight, loading, toll etc." />
         <KpiCard label="Spare Parts (this month)" value={kpis.sparePartsExpensesThisMonth} icon={PackageSearch} subtext="Purchased inventory value" />
+        <KpiCard
+          label="Fuel Cost / km"
+          value={efficiency.fuelCostPerKm ?? 0}
+          precise
+          icon={Gauge}
+          deltaPct={efficiency.fuelCostPerKmChangePct}
+          deltaLabel="vs last month"
+          subtext={efficiency.fuelCostPerKm === null ? "No fuel data with distance this month" : undefined}
+        />
+        <KpiCard
+          label="Maintenance Cost / Machine"
+          value={efficiency.maintenanceCostPerMachine ?? 0}
+          icon={Wrench}
+          deltaPct={efficiency.maintenanceCostPerMachineChangePct}
+          deltaLabel="vs last month"
+          subtext={
+            efficiency.maintenanceCostPerMachine === null
+              ? "No active machines"
+              : `Across ${efficiency.activeMachineCount} active machine(s)`
+          }
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -80,6 +121,27 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <TrendChart data={trend} />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">This Year vs Last Year</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <YoyTrendChart data={trendYoy} />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              Spending Anomalies — this month vs 3-month average
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SpendingAnomalies data={anomalies} />
           </CardContent>
         </Card>
 
