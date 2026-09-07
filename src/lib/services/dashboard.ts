@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { budgetUtilizationRatio, percentChange, fuelCostPerKm, averagePerUnit } from "@/lib/services/calculations";
 import { actualSpendForAllocation } from "@/lib/services/budgets";
 import { ExpenseStatus, MachineStatus } from "@/generated/prisma/enums";
+import { Prisma } from "@/generated/prisma/client";
 
 // Finalized spend = PAID only (invoice-presence-gated workflow; APPROVED and
 // REVIEWED are pre-payment checkpoints, not committed spend).
@@ -228,11 +229,15 @@ export async function getBudgetVsActual(companyId: string) {
  * against last year rather than just the raw trailing line.
  */
 export async function getExpenseTrendYoy(companyId: string, months = 12) {
+  // Stale-definition fix (post workflow-replacement): this originally hardcoded
+  // 'APPROVED', 'PAID' from the dual-status "finalized" definition that predated
+  // the invoice-based workflow. Now reuses FINALIZED, same as getSpendingAnomalies
+  // and the rest of this file, so this can't drift from that definition again.
   const rows = await prisma.$queryRaw<{ month: Date; total: number }[]>`
     SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
     FROM "expenses"
     WHERE "company_id" = ${companyId}
-      AND "status" IN ('APPROVED', 'PAID')
+      AND "status" IN (${Prisma.join(FINALIZED)})
       AND "expense_date" >= (date_trunc('month', now()) - (${months - 1 + 12} || ' months')::interval)
     GROUP BY 1
     ORDER BY 1
