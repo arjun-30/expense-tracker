@@ -16,6 +16,7 @@ export interface PermissionDef {
 
 export const PERMISSIONS: PermissionDef[] = [
   { code: "dashboard.view", module: "dashboard", description: "View the dashboard" },
+  { code: "dashboard.company_analytics", module: "dashboard", description: "View company-wide analytics on the dashboard (as opposed to only your own/department expenses)" },
 
   { code: "expenses.view", module: "expenses", description: "View expenses" },
   { code: "expenses.create", module: "expenses", description: "Create and edit draft expenses" },
@@ -85,7 +86,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   [ROLES.SUPER_ADMIN]: ALL_CODES,
   [ROLES.ADMIN]: except("users.manage", "settings.manage", "audit_logs.view", "roles.manage"),
   [ROLES.ACCOUNTS]: [
-    "dashboard.view",
+    "dashboard.view", "dashboard.company_analytics",
     "expenses.view", "expenses.create", "expenses.submit", "expenses.review", "expenses.reject", "expenses.mark_paid",
     "payments.view", "payments.create",
     "vendors.view", "vendors.manage",

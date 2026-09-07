@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canViewExpense, expenseVisibilityWhere } from "@/lib/rbac";
+import { canViewExpense, expenseVisibilityWhere, canViewCompanyDashboard } from "@/lib/rbac";
 import { ROLES } from "@/lib/rbac-client";
 import { ROLE_PERMISSIONS } from "@/lib/auth/permission-catalog";
 import type { SessionPayload } from "@/lib/session";
@@ -99,6 +99,29 @@ describe("Cross-tenant safety", () => {
       const session = makeSession(role);
       expect(canViewExpense(session, foreignCompanyExpense)).toBe(false);
     }
+  });
+});
+
+describe("canViewCompanyDashboard: gates the company-wide analytics dashboard", () => {
+  it.each([ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS])("%s can view the company dashboard", (role) => {
+    expect(canViewCompanyDashboard(makeSession(role))).toBe(true);
+  });
+
+  it.each([ROLES.PURCHASE_MANAGER, ROLES.MAINTENANCE_MANAGER, ROLES.TRANSPORT_MANAGER, ROLES.EMPLOYEE])(
+    "%s cannot view the company dashboard",
+    (role) => {
+      expect(canViewCompanyDashboard(makeSession(role))).toBe(false);
+    },
+  );
+
+  it("a restricted role holding every other permission still cannot view it without the dedicated permission", () => {
+    // Guards against accidentally gating on isAdminRole/hasCompanyWideExpenseAccess
+    // instead of the dedicated permission — a role could hold expenses.approve etc.
+    // without being one of the 3 roles meant to see company-wide analytics.
+    const session = makeSession(ROLES.PURCHASE_MANAGER, {
+      permissions: ["expenses.approve", "expenses.reject", "expenses.mark_paid", "dashboard.view"],
+    });
+    expect(canViewCompanyDashboard(session)).toBe(false);
   });
 });
 

@@ -4,6 +4,8 @@ import { budgetUtilizationRatio, percentChange, fuelCostPerKm, averagePerUnit } 
 import { actualSpendForAllocation } from "@/lib/services/budgets";
 import { ExpenseStatus, MachineStatus } from "@/generated/prisma/enums";
 import { Prisma } from "@/generated/prisma/client";
+import { requirePermission } from "@/lib/rbac";
+import type { SessionPayload } from "@/lib/session";
 
 // Finalized spend = PAID only (invoice-presence-gated workflow; APPROVED and
 // REVIEWED are pre-payment checkpoints, not committed spend).
@@ -14,6 +16,14 @@ const FINALIZED: ExpenseStatus[] = [ExpenseStatus.PAID];
 // anomaly — keeps small/noisy categories from drowning out real spikes.
 const ANOMALY_THRESHOLD_PCT = 40;
 const ANOMALY_MIN_AMOUNT = 2000;
+
+/** Every function below returns company-wide analytics — called at the top of
+ * each one so a caller who somehow reaches these functions without going through
+ * the page-level canViewCompanyDashboard() branch still gets refused here, not
+ * just hidden in the UI. */
+function requireCompanyAnalyticsAccess(session: SessionPayload): void {
+  requirePermission(session, ["dashboard.company_analytics"]);
+}
 
 function toNumber(d: unknown): number {
   return d === null || d === undefined ? 0 : Number(d);
@@ -26,7 +36,9 @@ function monthBounds(offsetMonths = 0) {
   return { start, end };
 }
 
-export async function getKpis(companyId: string) {
+export async function getKpis(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const { start: thisMonthStart, end: thisMonthEnd } = monthBounds(0);
   const { start: lastMonthStart, end: lastMonthEnd } = monthBounds(-1);
 
@@ -113,7 +125,9 @@ export async function getKpis(companyId: string) {
   };
 }
 
-export async function getExpenseTrend(companyId: string, months = 12) {
+export async function getExpenseTrend(session: SessionPayload, months = 12) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const rows = await prisma.$queryRaw<{ month: Date; total: number }[]>`
     SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
     FROM "expenses"
@@ -129,7 +143,9 @@ export async function getExpenseTrend(companyId: string, months = 12) {
   }));
 }
 
-export async function getExpenseByCategory(companyId: string) {
+export async function getExpenseByCategory(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const grouped = await prisma.expense.groupBy({
     by: ["categoryId"],
     where: { companyId, status: { in: FINALIZED } },
@@ -144,7 +160,9 @@ export async function getExpenseByCategory(companyId: string) {
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getDepartmentSpending(companyId: string) {
+export async function getDepartmentSpending(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const grouped = await prisma.expense.groupBy({
     by: ["departmentId"],
     where: { companyId, status: { in: FINALIZED } },
@@ -159,7 +177,9 @@ export async function getDepartmentSpending(companyId: string) {
     .sort((a, b) => b.value - a.value);
 }
 
-export async function getTopVendors(companyId: string, limit = 5) {
+export async function getTopVendors(session: SessionPayload, limit = 5) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const grouped = await prisma.expense.groupBy({
     by: ["vendorId"],
     where: { companyId, status: { in: FINALIZED }, vendorId: { not: null } },
@@ -174,7 +194,9 @@ export async function getTopVendors(companyId: string, limit = 5) {
     .slice(0, limit);
 }
 
-export async function getMachineMaintenanceCost(companyId: string, limit = 5) {
+export async function getMachineMaintenanceCost(session: SessionPayload, limit = 5) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const grouped = await prisma.maintenanceRecord.groupBy({
     by: ["machineId"],
     where: { machine: { companyId } },
@@ -188,7 +210,9 @@ export async function getMachineMaintenanceCost(companyId: string, limit = 5) {
     .slice(0, limit);
 }
 
-export async function getVehicleFuelCost(companyId: string, limit = 5) {
+export async function getVehicleFuelCost(session: SessionPayload, limit = 5) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const grouped = await prisma.fuelTransaction.groupBy({
     by: ["vehicleId"],
     where: { vehicle: { companyId } },
@@ -202,7 +226,9 @@ export async function getVehicleFuelCost(companyId: string, limit = 5) {
     .slice(0, limit);
 }
 
-export async function getBudgetVsActual(companyId: string) {
+export async function getBudgetVsActual(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const { start, end } = monthBounds(0);
   const budgets = await prisma.budget.findMany({
     where: { companyId, periodStart: { lte: end }, periodEnd: { gte: start } },
@@ -228,7 +254,9 @@ export async function getBudgetVsActual(companyId: string) {
  * year earlier, so the dashboard trend chart can show growth/contraction
  * against last year rather than just the raw trailing line.
  */
-export async function getExpenseTrendYoy(companyId: string, months = 12) {
+export async function getExpenseTrendYoy(session: SessionPayload, months = 12) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   // Stale-definition fix (post workflow-replacement): this originally hardcoded
   // 'APPROVED', 'PAID' from the dual-status "finalized" definition that predated
   // the invoice-based workflow. Now reuses FINALIZED, same as getSpendingAnomalies
@@ -263,7 +291,9 @@ export async function getExpenseTrendYoy(companyId: string, months = 12) {
 }
 
 /** Fleet-wide cost-efficiency metrics for the current month, alongside their prior-month comparisons. */
-export async function getSpendEfficiencyKpis(companyId: string) {
+export async function getSpendEfficiencyKpis(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const { start: thisStart, end: thisEnd } = monthBounds(0);
   const { start: lastStart, end: lastEnd } = monthBounds(-1);
 
@@ -346,7 +376,9 @@ export interface SpendAnomaly {
  * off their trailing 3-month average — a cheap stand-in for real forecasting
  * that surfaces the spikes and drops worth a human look.
  */
-export async function getSpendingAnomalies(companyId: string, limit = 8): Promise<SpendAnomaly[]> {
+export async function getSpendingAnomalies(session: SessionPayload, limit = 8): Promise<SpendAnomaly[]> {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
   const { start: thisMonthStart, end: thisMonthEnd } = monthBounds(0);
   const trailingStart = monthBounds(-3).start;
 
@@ -397,4 +429,49 @@ function buildAnomalies(
     out.push({ type, name: names.get(id) ?? "Unknown", currentAmount, trailingAvgAmount: Math.round(trailingAvgAmount * 100) / 100, changePct });
   }
   return out;
+}
+
+// ───────────────────────── Personal dashboard (Employee / department managers) ─────────────────────────
+
+/** The 5 statuses reachable under the current invoice-gated workflow, in the order
+ * shown on the personal dashboard's status cards. APPROVED is deliberately excluded:
+ * it's a legacy status left unreachable by the workflow redesign, confirmed empty
+ * on both local and Neon data. */
+const PERSONAL_DASHBOARD_STATUSES = ["SUBMITTED", "APPROVAL_PENDING", "REVIEWED", "PAID", "REJECTED"] as const satisfies readonly ExpenseStatus[];
+
+export type PersonalDashboardStatus = (typeof PERSONAL_DASHBOARD_STATUSES)[number];
+
+/** Expense counts per status for a caller-supplied scope (own expenses for EMPLOYEE,
+ * department expenses for the manager roles) — build `where` via expenseVisibilityWhere()
+ * so this never needs its own visibility logic. Every one of the 5 reachable statuses is
+ * present in the result, defaulting to 0, so callers never need an existence check. */
+export async function getExpenseStatusCounts(
+  where: Prisma.ExpenseWhereInput,
+): Promise<Record<PersonalDashboardStatus, number>> {
+  const grouped = await prisma.expense.groupBy({
+    by: ["status"],
+    where,
+    _count: { _all: true },
+  });
+  const counts = Object.fromEntries(PERSONAL_DASHBOARD_STATUSES.map((s) => [s, 0])) as Record<PersonalDashboardStatus, number>;
+  for (const row of grouped) {
+    if ((PERSONAL_DASHBOARD_STATUSES as readonly string[]).includes(row.status)) {
+      counts[row.status as PersonalDashboardStatus] = row._count._all;
+    }
+  }
+  return counts;
+}
+
+/** Most recent expenses within a caller-supplied scope, for the personal dashboard's
+ * Recent Expenses table — same attachments include as expenses/page.tsx's Invoice/Bill column. */
+export async function getRecentExpenses(where: Prisma.ExpenseWhereInput, take: number) {
+  return prisma.expense.findMany({
+    where,
+    include: {
+      category: true,
+      attachments: { where: { attachmentType: "INVOICE" }, take: 1 },
+    },
+    orderBy: { expenseDate: "desc" },
+    take,
+  });
 }

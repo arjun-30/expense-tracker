@@ -8,10 +8,19 @@ export function isAdminRole(session: { roles: string[] }): boolean {
   return hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN);
 }
 
+/** Whether `session` can see the company-wide analytics dashboard (as opposed to
+ * only its own/department expenses on the personal dashboard). Gated on a dedicated
+ * permission — deliberately not inferred from isAdminRole/company-wide expense
+ * handling, since those track a different concern (who processes expenses) and
+ * could drift independently via the Roles management module. */
+export function canViewCompanyDashboard(session: { permissions: string[] }): boolean {
+  return hasPermission(session, "dashboard.company_analytics");
+}
+
 /** Permission codes whose holder is responsible for processing expenses company-wide
- * (verification, approval, rejection, payment) rather than only within their own
- * department — e.g. ACCOUNTS reviews and pays expenses submitted by every department. */
-const COMPANY_WIDE_EXPENSE_PERMISSIONS = ["expenses.verify", "expenses.approve", "expenses.reject", "expenses.mark_paid"];
+ * (approval, rejection, payment) rather than only within their own department — e.g.
+ * ACCOUNTS reviews and pays expenses submitted by every department. */
+const COMPANY_WIDE_EXPENSE_PERMISSIONS = ["expenses.approve", "expenses.reject", "expenses.mark_paid"];
 
 /** True if `session` holds any permission that makes it responsible for handling
  * expenses across the whole company, not just its own department. */
