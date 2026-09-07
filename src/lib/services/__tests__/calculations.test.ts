@@ -10,6 +10,7 @@ import {
   budgetUtilizationRatio,
   spareReplacementFrequency,
   percentChange,
+  averagePerUnit,
 } from "@/lib/services/calculations";
 
 describe("expenseTotal", () => {
@@ -97,5 +98,14 @@ describe("percentChange", () => {
   });
   it("returns null when previous is zero", () => {
     expect(percentChange(50, 0)).toBeNull();
+  });
+});
+
+describe("averagePerUnit", () => {
+  it("computes total / unit count", () => {
+    expect(averagePerUnit(50000, 4)).toBe(12500);
+  });
+  it("returns null for zero units", () => {
+    expect(averagePerUnit(50000, 0)).toBeNull();
   });
 });
