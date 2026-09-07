@@ -29,6 +29,16 @@
 -- (from_status is nullable) rather than remapped to a real status, since
 -- "the prior status was DRAFT" is simply no longer a representable fact —
 -- inventing a replacement value would misstate history.
+--
+-- Confirmed data-migration decision, added after this migration first ran
+-- against Neon (production) and failed: Neon has 11 expense_approvals rows
+-- with action = 'VERIFIED' (the old ACCOUNTS "verify" step), which local
+-- never had and this migration originally didn't account for. Unlike the
+-- from_status = 'DRAFT' case above, "verify" has a direct successor concept
+-- in the new model — VERIFIED is remapped to REVIEWED here, not cleared,
+-- since both represent the same audit fact: a review/sign-off checkpoint,
+-- not a final approval. This mirrors how the analogous legacy APPROVED-
+-- status expenses were migrated to REVIEWED rather than left unresolved.
 
 -- Move any UNDER_REVIEW expenses to SUBMITTED (confirmed decision; 0 rows on
 -- local, but this must run before the enum swap below regardless).
@@ -39,8 +49,22 @@ UPDATE "expense_approvals" SET "from_status" = 'SUBMITTED' WHERE "from_status" =
 -- Historical DRAFT from_status entries: no successor status to map to, clear.
 UPDATE "expense_approvals" SET "from_status" = NULL WHERE "from_status" = 'DRAFT';
 
+-- Historical VERIFIED actions (old ACCOUNTS "verify" step): remapped to
+-- REVIEWED, a review/sign-off checkpoint under the new model, not cleared,
+-- since it has a direct successor concept (confirmed decision; 0 rows on
+-- local, 11 on Neon). Must run before the approval_action enum swap below.
+UPDATE "expense_approvals" SET "action" = 'REVIEWED' WHERE "action" = 'VERIFIED';
+
 -- CreateEnum
-CREATE TYPE "attachment_type" AS ENUM ('INVOICE', 'SUPPORTING');
+-- Guarded (not a plain CREATE TYPE): this statement sits before any BEGIN
+-- block, so on the first Neon attempt it auto-committed on its own before
+-- the later approval_action cast failed and aborted that migration run. A
+-- retry of this same file must not error on "already exists" against that
+-- partially-applied state, so this is wrapped the standard Postgres way.
+DO $$ BEGIN
+  CREATE TYPE "attachment_type" AS ENUM ('INVOICE', 'SUPPORTING');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterEnum (approval_action: drop VERIFIED, CANCELLED)
 BEGIN;
