@@ -369,10 +369,52 @@ async function main() {
       const amount = randomBetween(500, 45000);
       const tax = Math.round(amount * 0.18 * 100) / 100;
       const total = amount + tax;
-      const statusRoll = Math.random();
-      const status = statusRoll < 0.6 ? "PAID" : statusRoll < 0.8 ? "APPROVED" : statusRoll < 0.9 ? "SUBMITTED" : "REJECTED";
       const expenseNumber = `EXP-${String(seq++).padStart(6, "0")}`;
       const vendorId = Math.random() > 0.4 ? pick(Object.values(vendors)).id : null;
+
+      // Invoice-presence-gated workflow: which scenario this expense follows
+      // (and hence its initial status) is decided once, right here, exactly
+      // like createExpenseAction does for a real submission.
+      const hasInvoice = Math.random() < 0.6;
+      let status: string = hasInvoice ? "SUBMITTED" : "APPROVAL_PENDING";
+      const approvalSteps: { action: string; actedById: string; fromStatus: string | null; toStatus: string; remarks?: string }[] = [
+        { action: "SUBMITTED", actedById: users[ROLES.EMPLOYEE].id, fromStatus: null, toStatus: status },
+      ];
+
+      // No-invoice path: an admin approves (re-entering at SUBMITTED) or rejects.
+      if (!hasInvoice) {
+        const roll = Math.random();
+        if (roll < 0.15) {
+          // stays APPROVAL_PENDING — nothing further to log
+        } else if (roll < 0.25) {
+          approvalSteps.push({ action: "REJECTED", actedById: users[ROLES.ADMIN].id, fromStatus: "APPROVAL_PENDING", toStatus: "REJECTED", remarks: "No invoice attached and the expense could not be verified." });
+          status = "REJECTED";
+        } else {
+          approvalSteps.push({ action: "APPROVED", actedById: users[ROLES.ADMIN].id, fromStatus: "APPROVAL_PENDING", toStatus: "SUBMITTED" });
+          status = "SUBMITTED";
+        }
+      }
+
+      // Both paths converge at SUBMITTED: reviewed or rejected.
+      if (status === "SUBMITTED") {
+        const roll = Math.random();
+        if (roll < 0.15) {
+          // stays SUBMITTED
+        } else if (roll < 0.25) {
+          approvalSteps.push({ action: "REJECTED", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "SUBMITTED", toStatus: "REJECTED", remarks: "Invoice does not match submitted amount." });
+          status = "REJECTED";
+        } else {
+          approvalSteps.push({ action: "REVIEWED", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "SUBMITTED", toStatus: "REVIEWED" });
+          status = "REVIEWED";
+        }
+      }
+
+      // Reviewed expenses may go on to be paid.
+      if (status === "REVIEWED" && Math.random() >= 0.2) {
+        approvalSteps.push({ action: "PAID", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "REVIEWED", toStatus: "PAID" });
+        status = "PAID";
+      }
+
       const expense = await prisma.expense.create({
         data: {
           companyId,
@@ -389,60 +431,47 @@ async function main() {
           paymentMethod: pick(["CASH", "UPI", "BANK_TRANSFER", "NEFT", "CHEQUE"]) as never,
           description: `${sub.name} expense — ${dept.name}`,
           status: status as never,
+          hasInvoice,
         },
       });
-      await prisma.expenseApproval.create({
-        data: {
-          expenseId: expense.id,
-          approvalLevel: 1,
-          action: "SUBMITTED",
-          actedById: users[ROLES.EMPLOYEE].id,
-          fromStatus: "DRAFT",
-          toStatus: "SUBMITTED",
-        },
-      });
-      if (status !== "SUBMITTED") {
+
+      for (const step of approvalSteps) {
         await prisma.expenseApproval.create({
           data: {
             expenseId: expense.id,
             approvalLevel: 1,
-            action: status === "REJECTED" ? "REJECTED" : "APPROVED",
-            actedById: users[ROLES.ADMIN].id,
-            fromStatus: "SUBMITTED",
-            toStatus: status === "REJECTED" ? "REJECTED" : "APPROVED",
-            remarks: status === "REJECTED" ? "Invoice does not match submitted amount." : null,
+            action: step.action as never,
+            actedById: step.actedById,
+            fromStatus: step.fromStatus as never,
+            toStatus: step.toStatus as never,
+            remarks: step.remarks ?? null,
           },
         });
       }
+
       if (status === "PAID") {
-        await prisma.expenseApproval.create({
-          data: {
-            expenseId: expense.id,
-            approvalLevel: 1,
-            action: "PAID",
-            actedById: users[ROLES.ACCOUNTS].id,
-            fromStatus: "APPROVED",
-            toStatus: "PAID",
-          },
-        });
         paidExpenseIds.push({ id: expense.id, expenseNumber: expense.expenseNumber, total, vendorId });
       }
-      // A handful of sample attachments — a real generated PDF actually
-      // uploaded to Cloudinary, so demo links work instead of 404ing.
-      if (i % 12 === 0) {
+
+      // Every with-invoice expense gets a real generated PDF actually
+      // uploaded to Cloudinary as its invoice, so demo links work instead
+      // of 404ing (and hasInvoice always corresponds to a real attachment).
+      if (hasInvoice) {
         const pdfBuffer = await buildPlaceholderReceiptPdf(expenseNumber, total);
         const storageKey = await uploadSeedAttachment(pdfBuffer, `mecs_seed_${expenseNumber}`);
-        if (!storageKey) continue;
-        await prisma.expenseAttachment.create({
-          data: {
-            expenseId: expense.id,
-            fileName: `receipt-${expenseNumber}.pdf`,
-            storageKey,
-            fileType: "application/pdf",
-            fileSizeBytes: BigInt(pdfBuffer.byteLength),
-            uploadedById: users[ROLES.EMPLOYEE].id,
-          },
-        });
+        if (storageKey) {
+          await prisma.expenseAttachment.create({
+            data: {
+              expenseId: expense.id,
+              fileName: `invoice-${expenseNumber}.pdf`,
+              storageKey,
+              fileType: "application/pdf",
+              fileSizeBytes: BigInt(pdfBuffer.byteLength),
+              uploadedById: users[ROLES.EMPLOYEE].id,
+              attachmentType: "INVOICE",
+            },
+          });
+        }
       }
     }
 

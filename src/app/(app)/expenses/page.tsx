@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Eye } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { isAdminRole, expenseVisibilityWhere } from "@/lib/rbac";
@@ -15,7 +15,7 @@ import { formatDate, formatINR } from "@/lib/format";
 import { ExpenseStatus } from "@/generated/prisma/enums";
 import { hasRole } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
-import { parseFilterParam } from "@/lib/utils";
+import { cn, parseFilterParam } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -66,7 +66,13 @@ export default async function ExpensesPage({
   const [expenses, total, departments] = await Promise.all([
     prisma.expense.findMany({
       where,
-      include: { category: true, department: true, vendor: true, employee: true },
+      include: {
+        category: true,
+        department: true,
+        vendor: true,
+        employee: true,
+        attachments: { where: { attachmentType: "INVOICE" }, take: 1 },
+      },
       orderBy: { expenseDate: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -132,11 +138,25 @@ export default async function ExpensesPage({
               <TableHead>Employee</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Invoice/Bill</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {expenses.map((e) => (
-              <TableRow key={e.id} className="cursor-pointer">
+              <TableRow
+                key={e.id}
+                className={cn(
+                  "cursor-pointer",
+                  // Persistent, accessible "needs approval" highlight — a
+                  // static red-tinted background/left-border always applies;
+                  // approval-pending-highlight (globals.css) adds a gentle
+                  // glow pulse on top, but only for prefers-reduced-motion:
+                  // no-preference. Derived live from status, so it vanishes
+                  // the moment this expense is approved or rejected.
+                  e.status === "APPROVAL_PENDING" &&
+                    "border-l-4 border-l-destructive bg-destructive/10 hover:bg-destructive/15 approval-pending-highlight"
+                )}
+              >
                 <TableCell className="font-medium">
                   <Link href={`/expenses/${e.id}`} className="hover:underline">{e.expenseNumber}</Link>
                 </TableCell>
@@ -149,11 +169,26 @@ export default async function ExpensesPage({
                 <TableCell>
                   <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABELS[e.status]}</Badge>
                 </TableCell>
+                <TableCell>
+                  {e.attachments[0] ? (
+                    <a
+                      href={`/api/files/${e.attachments[0].storageKey}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                      title="View bill"
+                    >
+                      <Eye className="h-4 w-4" /> View Bill
+                    </a>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No Bill</span>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
             {expenses.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                   No expenses found.
                 </TableCell>
               </TableRow>

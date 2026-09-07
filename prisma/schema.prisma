@@ -224,14 +224,23 @@ enum PaymentMethod {
   @@map("payment_method")
 }
 
+// Invoice-presence-gated workflow (full replacement of the old
+// DRAFT/SUBMITTED/UNDER_REVIEW/APPROVED/REJECTED/PAID/CANCELLED model — see
+// prisma/OPEN_DECISIONS.md for the migration decisions this replacement made):
+//   - with invoice:    SUBMITTED -> REVIEWED -> PAID
+//   - without invoice: APPROVAL_PENDING -> SUBMITTED -> REVIEWED -> PAID
+//                       (or APPROVAL_PENDING -> REJECTED)
+// APPROVED is retained as an enum member but is not assigned by any current
+// transition (the "approve" transition goes straight to SUBMITTED) — kept
+// only so existing rows/tooling that may reference it don't break, and in
+// case a future transition needs a real APPROVED resting state.
 enum ExpenseStatus {
-  DRAFT
   SUBMITTED
-  UNDER_REVIEW
+  APPROVAL_PENDING
   APPROVED
+  REVIEWED
   REJECTED
   PAID
-  CANCELLED
 
   @@map("expense_status")
 }
@@ -239,13 +248,18 @@ enum ExpenseStatus {
 enum ApprovalAction {
   SUBMITTED
   REVIEWED
-  VERIFIED
   APPROVED
   REJECTED
   PAID
-  CANCELLED
 
   @@map("approval_action")
+}
+
+enum AttachmentType {
+  INVOICE
+  SUPPORTING
+
+  @@map("attachment_type")
 }
 
 enum PaymentStatus {
@@ -344,7 +358,12 @@ model Expense {
   discountAmount  Decimal             @default(0) @map("discount_amount") @db.Decimal(14, 2)
   totalAmount     Decimal             @map("total_amount") @db.Decimal(14, 2)
   paymentMethod   PaymentMethod?      @map("payment_method")
-  status          ExpenseStatus       @default(DRAFT)
+  status          ExpenseStatus
+  // Set once at creation, based on whether an invoice/bill was uploaded in
+  // the create form — determines which of the two workflow scenarios this
+  // expense follows. Deliberately does NOT change later even if the
+  // invoice attachment is subsequently deleted (see ExpenseAttachment.attachmentType).
+  hasInvoice      Boolean             @default(false) @map("has_invoice")
   description     String?
   referenceNumber String?             @map("reference_number") @db.VarChar(100)
   createdAt       DateTime            @default(now()) @map("created_at")
@@ -368,6 +387,11 @@ model ExpenseAttachment {
   storageKey    String   @map("storage_key")
   fileType      String?  @map("file_type") @db.VarChar(50)
   fileSizeBytes BigInt?  @map("file_size_bytes")
+  // Exactly one INVOICE-type attachment is enforced at the application
+  // level (see uploadAttachmentAction) — a new INVOICE upload replaces any
+  // existing one rather than allowing duplicates. Everything else defaults
+  // to SUPPORTING, including every attachment that existed before this field.
+  attachmentType AttachmentType @default(SUPPORTING) @map("attachment_type")
   uploadedById  String   @map("uploaded_by")
   uploadedBy    User     @relation(fields: [uploadedById], references: [id])
   uploadedAt    DateTime @default(now()) @map("uploaded_at")

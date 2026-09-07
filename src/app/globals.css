@@ -152,3 +152,25 @@
     @apply font-sans;
   }
 }
+
+/* Persistent highlight for rows needing urgent attention (e.g. an
+ * APPROVAL_PENDING expense on the list page) — a static red-tinted
+ * background/border always applies (see the .approval-pending-highlight
+ * class's own Tailwind utilities where it's used), and this adds a gentle
+ * glow pulse on top, gated behind prefers-reduced-motion so users who've
+ * asked for reduced motion still get the static highlight, just without
+ * the animation. Deliberately not a rapid on/off blink (WCAG 2.2.2). */
+@keyframes approval-pending-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--destructive) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 8px 2px color-mix(in oklch, var(--destructive) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .approval-pending-highlight {
+    animation: approval-pending-pulse 2.5s ease-in-out infinite;
+  }
+}

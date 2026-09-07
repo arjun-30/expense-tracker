@@ -7,7 +7,7 @@ import { requireSession } from "@/lib/session";
 import { requirePermission, isAdminRole, ForbiddenError } from "@/lib/rbac";
 import { hasPermission } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
-import { ExpenseStatus, ApprovalAction } from "@/generated/prisma/enums";
+import { ExpenseStatus, ApprovalAction, AttachmentType } from "@/generated/prisma/enums";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { expenseTotal } from "@/lib/services/calculations";
@@ -38,15 +38,39 @@ export interface ActionResult {
   id?: string;
 }
 
-// Every role can create/submit/cancel its own expenses — same as the old
+// Every role can create/submit its own expenses — same as the old
 // CREATE_ROLES constant, which listed every Role enum value.
 const CREATE_PERMISSIONS = ["expenses.create"];
 
-export async function createExpenseAction(input: ExpenseInput): Promise<ActionResult> {
+/** Statuses an expense can still be edited/have its invoice-affecting
+ * fields changed in — before any review/approval decision has been made.
+ * Replaces the old "only DRAFT is editable" rule now that DRAFT is gone;
+ * SUBMITTED and APPROVAL_PENDING are the two "nothing has happened yet"
+ * states in the new model. */
+const EDITABLE_STATUSES: ExpenseStatus[] = [ExpenseStatus.SUBMITTED, ExpenseStatus.APPROVAL_PENDING];
+
+function extractFormFields(formData: FormData) {
+  return {
+    date: formData.get("date"),
+    categoryId: formData.get("categoryId"),
+    subcategoryId: formData.get("subcategoryId") || null,
+    amount: formData.get("amount"),
+    taxAmount: formData.get("taxAmount") || 0,
+    discountAmount: formData.get("discountAmount") || 0,
+    vendorId: formData.get("vendorId") || null,
+    departmentId: formData.get("departmentId"),
+    costCenterId: formData.get("costCenterId") || null,
+    paymentMethod: formData.get("paymentMethod") || null,
+    description: formData.get("description") || null,
+    referenceNumber: formData.get("referenceNumber") || null,
+  };
+}
+
+export async function createExpenseAction(formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
   requirePermission(session, CREATE_PERMISSIONS);
 
-  const parsed = expenseSchema.safeParse(input);
+  const parsed = expenseSchema.safeParse(extractFormFields(formData));
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   const data = parsed.data;
   if (!isAdminRole(session) && data.departmentId !== session.departmentId) {
@@ -54,10 +78,31 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
   }
   const total = expenseTotal(data.amount, data.taxAmount, data.discountAmount);
 
+  const invoiceFile = formData.get("invoiceFile");
+  const hasInvoice = invoiceFile instanceof File && invoiceFile.size > 0;
+  if (hasInvoice && invoiceFile.size > MAX_UPLOAD_BYTES) {
+    return { success: false, error: "Invoice file exceeds 10 MB limit" };
+  }
+
+  let storedInvoiceKey: string | null = null;
+  if (hasInvoice) {
+    try {
+      const buffer = Buffer.from(await invoiceFile.arrayBuffer());
+      const stored = await getStorageProvider().save(buffer, invoiceFile.name, invoiceFile.type);
+      storedInvoiceKey = stored.key;
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : "Invoice upload failed" };
+    }
+  }
+
+  // Which of the two workflow scenarios this expense follows is decided
+  // once, right here, based on whether an invoice was actually attached.
+  const initialStatus = hasInvoice ? ExpenseStatus.SUBMITTED : ExpenseStatus.APPROVAL_PENDING;
+
   const expense = await withSequenceRetry(() =>
     prisma.$transaction(async (tx) => {
       const expenseNumber = await nextSequenceNumber(tx.expense, "EXP");
-      return tx.expense.create({
+      const created = await tx.expense.create({
         data: {
           companyId: session.companyId,
           expenseNumber,
@@ -75,13 +120,54 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
           paymentMethod: data.paymentMethod || null,
           description: data.description || null,
           referenceNumber: data.referenceNumber || null,
-          status: ExpenseStatus.DRAFT,
+          status: initialStatus,
+          hasInvoice,
         },
       });
+
+      if (hasInvoice && storedInvoiceKey && invoiceFile instanceof File) {
+        await tx.expenseAttachment.create({
+          data: {
+            expenseId: created.id,
+            fileName: invoiceFile.name,
+            storageKey: storedInvoiceKey,
+            fileType: invoiceFile.type,
+            fileSizeBytes: BigInt(invoiceFile.size),
+            uploadedById: session.sub,
+            attachmentType: AttachmentType.INVOICE,
+          },
+        });
+      }
+
+      await tx.expenseApproval.create({
+        data: {
+          expenseId: created.id,
+          approvalLevel: 1,
+          action: ApprovalAction.SUBMITTED,
+          actedById: session.sub,
+          fromStatus: null,
+          toStatus: initialStatus,
+        },
+      });
+
+      return created;
     })
   );
 
   await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Expense", entityId: expense.id, newValue: expense });
+
+  if (initialStatus === ExpenseStatus.SUBMITTED) {
+    await notify({
+      companyId: session.companyId,
+      roleName: ROLES.ADMIN,
+      type: "expense_awaiting_approval",
+      title: "Expense awaiting approval",
+      message: `${expense.expenseNumber} was submitted for review.`,
+      entityType: "Expense",
+      entityId: expense.id,
+    });
+  }
+
   revalidatePath("/expenses");
   return { success: true, id: expense.id };
 }
@@ -90,9 +176,11 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
   const session = await requireSession();
   const existing = await prisma.expense.findUnique({ where: { id } });
   if (!existing) return { success: false, error: "Expense not found" };
-  if (existing.status !== ExpenseStatus.DRAFT) return { success: false, error: "Only draft expenses can be edited" };
+  if (!EDITABLE_STATUSES.includes(existing.status)) {
+    return { success: false, error: "Only expenses awaiting review or approval can be edited" };
+  }
   if (existing.employeeId !== session.sub && !isAdminRole(session)) {
-    return { success: false, error: "You can only edit your own draft expenses" };
+    return { success: false, error: "You can only edit your own expenses" };
   }
 
   const parsed = expenseSchema.safeParse(input);
@@ -130,58 +218,41 @@ export async function updateExpenseAction(id: string, input: ExpenseInput): Prom
 
 interface TransitionRule {
   from: ExpenseStatus[];
-  /** Required unless `ownerOnly` — the permission code that gates this transition. */
-  permission?: string;
+  permission: string;
   to: ExpenseStatus;
   action: ApprovalAction;
   requiresRemarks?: boolean;
-  /** Owner of the expense may always perform this transition, in addition to admins. */
-  ownerOnly?: boolean;
 }
 
 const TRANSITIONS: Record<string, TransitionRule> = {
-  submit: {
-    from: [ExpenseStatus.DRAFT],
-    to: ExpenseStatus.SUBMITTED,
-    action: ApprovalAction.SUBMITTED,
-    ownerOnly: true,
-  },
   review: {
     from: [ExpenseStatus.SUBMITTED],
     permission: "expenses.review",
-    to: ExpenseStatus.UNDER_REVIEW,
+    to: ExpenseStatus.REVIEWED,
     action: ApprovalAction.REVIEWED,
   },
-  verify: {
-    from: [ExpenseStatus.UNDER_REVIEW],
-    permission: "expenses.verify",
-    to: ExpenseStatus.UNDER_REVIEW,
-    action: ApprovalAction.VERIFIED,
-  },
-  approve: {
-    from: [ExpenseStatus.SUBMITTED, ExpenseStatus.UNDER_REVIEW],
-    permission: "expenses.approve",
-    to: ExpenseStatus.APPROVED,
-    action: ApprovalAction.APPROVED,
-  },
   reject: {
-    from: [ExpenseStatus.SUBMITTED, ExpenseStatus.UNDER_REVIEW],
+    from: [ExpenseStatus.SUBMITTED, ExpenseStatus.APPROVAL_PENDING],
     permission: "expenses.reject",
     to: ExpenseStatus.REJECTED,
     action: ApprovalAction.REJECTED,
     requiresRemarks: true,
   },
   markPaid: {
-    from: [ExpenseStatus.APPROVED],
+    from: [ExpenseStatus.REVIEWED],
     permission: "expenses.mark_paid",
     to: ExpenseStatus.PAID,
     action: ApprovalAction.PAID,
   },
-  cancel: {
-    from: [ExpenseStatus.DRAFT, ExpenseStatus.SUBMITTED],
-    to: ExpenseStatus.CANCELLED,
-    action: ApprovalAction.CANCELLED,
-    ownerOnly: true,
+  approve: {
+    // No-invoice path only. Deliberately re-enters the flow at SUBMITTED
+    // rather than resting at APPROVED, so it goes through the exact same
+    // Review -> Mark as Paid steps as an expense that had an invoice from
+    // the start (see prisma/schema.prisma's ExpenseStatus comment).
+    from: [ExpenseStatus.APPROVAL_PENDING],
+    permission: "expenses.approve",
+    to: ExpenseStatus.SUBMITTED,
+    action: ApprovalAction.APPROVED,
   },
 };
 
@@ -199,12 +270,7 @@ export async function transitionExpenseAction(
   if (!rule.from.includes(expense.status)) {
     return { success: false, error: `Cannot ${transition} an expense in status ${expense.status}` };
   }
-  const isOwner = expense.employeeId === session.sub;
-  if (rule.ownerOnly) {
-    if (!(isOwner || isAdminRole(session))) {
-      throw new ForbiddenError();
-    }
-  } else if (!rule.permission || !hasPermission(session, rule.permission)) {
+  if (!hasPermission(session, rule.permission)) {
     throw new ForbiddenError();
   }
   if (rule.requiresRemarks && !remarks?.trim()) {
@@ -241,6 +307,9 @@ export async function transitionExpenseAction(
   });
 
   if (rule.to === ExpenseStatus.SUBMITTED) {
+    // Reached either by the "approve" transition (no-invoice path re-entering
+    // the flow) — createExpenseAction fires this same notification directly
+    // for the with-invoice path, since that one never goes through this action.
     await notify({
       companyId: session.companyId,
       roleName: ROLES.ADMIN,
@@ -262,16 +331,19 @@ export async function transitionExpenseAction(
       entityId: id,
     });
   }
-  if (rule.to === ExpenseStatus.APPROVED) {
+  if (rule.to === ExpenseStatus.PAID) {
     await notify({
       companyId: session.companyId,
       userId: expense.employeeId,
-      type: "expense_approved",
-      title: "Expense approved",
-      message: `${expense.expenseNumber} was approved.`,
+      type: "expense_paid",
+      title: "Expense paid",
+      message: `${expense.expenseNumber} has been marked as paid.`,
       entityType: "Expense",
       entityId: id,
     });
+    // Finalized spend = PAID only (see FINALIZED constants in dashboard.ts/
+    // budgets.ts/vendors.ts) — budget thresholds are checked at the same
+    // point an expense actually counts as spend, not when it's merely approved.
     await checkBudgetThresholds({
       companyId: session.companyId,
       departmentId: expense.departmentId,
@@ -286,7 +358,11 @@ export async function transitionExpenseAction(
   return { success: true, id: updated.id };
 }
 
-export async function uploadAttachmentAction(expenseId: string, formData: FormData): Promise<ActionResult> {
+export async function uploadAttachmentAction(
+  expenseId: string,
+  formData: FormData,
+  attachmentType: "SUPPORTING" | "INVOICE" = "SUPPORTING"
+): Promise<ActionResult> {
   const session = await requireSession();
   const file = formData.get("file");
   if (!(file instanceof File)) return { success: false, error: "No file provided" };
@@ -300,6 +376,20 @@ export async function uploadAttachmentAction(expenseId: string, formData: FormDa
     return { success: false, error: err instanceof Error ? err.message : "Upload failed" };
   }
 
+  // One invoice per expense, enforced at the application level: a new
+  // INVOICE upload replaces any existing one (rather than being rejected)
+  // — chosen over rejecting so correcting a wrong invoice file doesn't
+  // require a separate delete-then-reupload step.
+  if (attachmentType === "INVOICE") {
+    const existingInvoice = await prisma.expenseAttachment.findFirst({
+      where: { expenseId, attachmentType: AttachmentType.INVOICE },
+    });
+    if (existingInvoice) {
+      await getStorageProvider().delete(existingInvoice.storageKey, existingInvoice.fileType);
+      await prisma.expenseAttachment.delete({ where: { id: existingInvoice.id } });
+    }
+  }
+
   const attachment = await prisma.expenseAttachment.create({
     data: {
       expenseId,
@@ -308,10 +398,11 @@ export async function uploadAttachmentAction(expenseId: string, formData: FormDa
       fileType: file.type,
       fileSizeBytes: BigInt(file.size),
       uploadedById: session.sub,
+      attachmentType: attachmentType === "INVOICE" ? AttachmentType.INVOICE : AttachmentType.SUPPORTING,
     },
   });
 
-  await audit({ companyId: session.companyId, userId: session.sub, action: "UPLOAD_ATTACHMENT", entityType: "Expense", entityId: expenseId, newValue: { fileName: file.name } });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "UPLOAD_ATTACHMENT", entityType: "Expense", entityId: expenseId, newValue: { fileName: file.name, attachmentType } });
   revalidatePath(`/expenses/${expenseId}`);
   return { success: true, id: attachment.id };
 }

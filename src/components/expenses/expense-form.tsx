@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +45,8 @@ const PAYMENT_METHODS = ["CASH", "UPI", "BANK_TRANSFER", "NEFT", "RTGS", "CHEQUE
 export function ExpenseForm({ refData, defaultValues, expenseId }: { refData: RefData; defaultValues?: Partial<FormValues>; expenseId?: string }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const invoiceInputRef = useRef<HTMLInputElement>(null);
 
   const { register, handleSubmit, control, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -68,23 +71,44 @@ export function ExpenseForm({ refData, defaultValues, expenseId }: { refData: Re
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
-    const input: ExpenseInput = {
-      ...values,
-      date: new Date(values.date),
-      subcategoryId: values.subcategoryId || null,
-      vendorId: values.vendorId || null,
-      costCenterId: values.costCenterId || null,
-      paymentMethod: (values.paymentMethod as ExpenseInput["paymentMethod"]) || null,
-      description: values.description || null,
-      referenceNumber: values.referenceNumber || null,
-    };
-    const result = expenseId ? await updateExpenseAction(expenseId, input) : await createExpenseAction(input);
+
+    let result;
+    if (expenseId) {
+      const input: ExpenseInput = {
+        ...values,
+        date: new Date(values.date),
+        subcategoryId: values.subcategoryId || null,
+        vendorId: values.vendorId || null,
+        costCenterId: values.costCenterId || null,
+        paymentMethod: (values.paymentMethod as ExpenseInput["paymentMethod"]) || null,
+        description: values.description || null,
+        referenceNumber: values.referenceNumber || null,
+      };
+      result = await updateExpenseAction(expenseId, input);
+    } else {
+      const fd = new FormData();
+      fd.set("date", values.date);
+      fd.set("categoryId", values.categoryId);
+      if (values.subcategoryId) fd.set("subcategoryId", values.subcategoryId);
+      fd.set("amount", String(values.amount));
+      fd.set("taxAmount", String(values.taxAmount));
+      fd.set("discountAmount", String(values.discountAmount));
+      if (values.vendorId) fd.set("vendorId", values.vendorId);
+      fd.set("departmentId", values.departmentId);
+      if (values.costCenterId) fd.set("costCenterId", values.costCenterId);
+      if (values.paymentMethod) fd.set("paymentMethod", values.paymentMethod);
+      if (values.description) fd.set("description", values.description);
+      if (values.referenceNumber) fd.set("referenceNumber", values.referenceNumber);
+      if (invoiceFile) fd.set("invoiceFile", invoiceFile);
+      result = await createExpenseAction(fd);
+    }
+
     setSubmitting(false);
     if (!result.success) {
       toast.error(result.error ?? "Something went wrong");
       return;
     }
-    toast.success(expenseId ? "Expense updated" : "Expense created as draft");
+    toast.success(expenseId ? "Expense updated" : "Expense created");
     router.push(`/expenses/${result.id}`);
     router.refresh();
   }
@@ -223,13 +247,36 @@ export function ExpenseForm({ refData, defaultValues, expenseId }: { refData: Re
             <Input id="referenceNumber" {...register("referenceNumber")} />
           </div>
 
+          {!expenseId && (
+            <div className="space-y-2 md:col-span-2">
+              <Label>Invoice / Bill Upload</Label>
+              <p className="text-xs text-muted-foreground">
+                Optional — attaching an invoice now sends this expense straight for review. Without
+                one, it goes to an admin for approval first.
+              </p>
+              <input
+                ref={invoiceInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,.webp"
+                className="hidden"
+                onChange={(e) => setInvoiceFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => invoiceInputRef.current?.click()}>
+                  <Upload className="h-4 w-4" /> {invoiceFile ? "Change file" : "Attach invoice/bill"}
+                </Button>
+                {invoiceFile && <span className="text-sm text-muted-foreground">{invoiceFile.name}</span>}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" rows={3} {...register("description")} />
           </div>
 
           <div className="flex gap-2 md:col-span-2">
-            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : expenseId ? "Save changes" : "Save as draft"}</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : expenseId ? "Save changes" : "Create Expense"}</Button>
             <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
           </div>
         </form>

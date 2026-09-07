@@ -7,8 +7,9 @@ import { NotificationSeverity } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/rbac-client";
 
 /** Re-checks budget allocations covering (departmentId, categoryId, costCenterId, date) after
- * an expense moves to APPROVED/PAID and notifies Admins at the configured 80% warning /
- * 100% critical thresholds (§25, §44 budget_warning / budget_exceeded rules). */
+ * an expense is marked PAID (the only status that counts as finalized spend) and notifies
+ * Admins at the configured 80% warning / 100% critical thresholds (§25, §44 budget_warning /
+ * budget_exceeded rules). */
 export async function checkBudgetThresholds(params: {
   companyId: string;
   departmentId: string;

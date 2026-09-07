@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { budgetVariance, budgetUtilizationRatio } from "@/lib/services/calculations";
 import { ExpenseStatus } from "@/generated/prisma/enums";
 
-const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
+// Finalized spend = PAID only (invoice-presence-gated workflow).
+const FINALIZED: ExpenseStatus[] = [ExpenseStatus.PAID];
 
 export interface BudgetAllocationScope {
   departmentId: string | null;

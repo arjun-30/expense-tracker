@@ -12,6 +12,7 @@ interface Attachment {
   fileName: string;
   storageKey: string;
   fileSizeBytes: number | null;
+  attachmentType: "INVOICE" | "SUPPORTING";
   uploadedBy: { name: string };
   uploadedAt: string;
 }
@@ -55,6 +56,7 @@ export function ExpenseAttachments({ expenseId, attachments, canEdit }: { expens
             <a href={`/api/files/${a.storageKey}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:underline">
               <FileText className="h-4 w-4 shrink-0" />
               <span>{a.fileName}</span>
+              {a.attachmentType === "INVOICE" && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">Invoice</span>}
               {a.fileSizeBytes !== null && <span className="text-xs text-muted-foreground">({(a.fileSizeBytes / 1024).toFixed(0)} KB)</span>}
             </a>
             {canEdit && (

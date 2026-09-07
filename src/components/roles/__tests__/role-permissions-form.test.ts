@@ -27,7 +27,7 @@ describe("groupPermissions: derives grouping from the code prefix automatically"
     const expensesGroup = groups.find((g) => g.key === "expenses")!;
     expect(expensesGroup.label).toBe("Expenses");
     const codes = expensesGroup.items.map((p) => p.code);
-    expect(codes).toContain("expenses.verify");
+    expect(codes).toContain("expenses.review");
     expect(codes).toContain("expenses.approve");
     expect(codes.every((c) => c.startsWith("expenses."))).toBe(true);
   });

@@ -4,7 +4,9 @@ import { budgetUtilizationRatio, percentChange } from "@/lib/services/calculatio
 import { actualSpendForAllocation } from "@/lib/services/budgets";
 import { ExpenseStatus } from "@/generated/prisma/enums";
 
-const FINALIZED: ExpenseStatus[] = [ExpenseStatus.APPROVED, ExpenseStatus.PAID];
+// Finalized spend = PAID only (invoice-presence-gated workflow; APPROVED and
+// REVIEWED are pre-payment checkpoints, not committed spend).
+const FINALIZED: ExpenseStatus[] = [ExpenseStatus.PAID];
 
 function toNumber(d: unknown): number {
   return d === null || d === undefined ? 0 : Number(d);
@@ -42,11 +44,15 @@ export async function getKpis(companyId: string) {
       where: { companyId, status: { in: FINALIZED }, expenseDate: { gte: lastMonthStart, lt: lastMonthEnd } },
       _sum: { totalAmount: true },
     }),
-    prisma.expense.count({ where: { companyId, status: { in: ["SUBMITTED", "UNDER_REVIEW"] } } }),
-    // Approved-but-not-yet-paid stands in for "outstanding payments" now that
+    // Awaiting a review/approval decision — SUBMITTED (with invoice, not yet
+    // reviewed) or APPROVAL_PENDING (no invoice, awaiting admin approval).
+    // REVIEWED expenses have already passed every decision gate and are
+    // just awaiting payment processing, so they're not "pending approval".
+    prisma.expense.count({ where: { companyId, status: { in: ["SUBMITTED", "APPROVAL_PENDING"] } } }),
+    // Reviewed-but-not-yet-paid stands in for "outstanding payments" now that
     // Expense no longer carries its own paymentStatus (see prisma/SCHEMA_MIGRATION_NOTES.md §2).
     prisma.expense.aggregate({
-      where: { companyId, status: "APPROVED" },
+      where: { companyId, status: "REVIEWED" },
       _sum: { totalAmount: true },
     }),
     prisma.fuelTransaction.aggregate({
@@ -105,7 +111,7 @@ export async function getExpenseTrend(companyId: string, months = 12) {
     SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
     FROM "expenses"
     WHERE "company_id" = ${companyId}
-      AND "status" IN ('APPROVED', 'PAID')
+      AND "status" = 'PAID'
       AND "expense_date" >= (date_trunc('month', now()) - (${months - 1} || ' months')::interval)
     GROUP BY 1
     ORDER BY 1

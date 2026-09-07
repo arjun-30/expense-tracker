@@ -1,21 +1,19 @@
 import type { ExpenseStatus } from "@/generated/prisma/enums";
 
 export const EXPENSE_STATUS_LABELS: Record<ExpenseStatus, string> = {
-  DRAFT: "Draft",
   SUBMITTED: "Submitted",
-  UNDER_REVIEW: "Under Review",
+  APPROVAL_PENDING: "Approval Pending",
   APPROVED: "Approved",
+  REVIEWED: "Reviewed",
   REJECTED: "Rejected",
   PAID: "Paid",
-  CANCELLED: "Cancelled",
 };
 
 export const EXPENSE_STATUS_VARIANT: Record<ExpenseStatus, "default" | "secondary" | "destructive" | "outline" | "success"> = {
-  DRAFT: "outline",
   SUBMITTED: "secondary",
-  UNDER_REVIEW: "secondary",
-  APPROVED: "success",
+  APPROVAL_PENDING: "outline",
+  APPROVED: "secondary",
+  REVIEWED: "secondary",
   REJECTED: "destructive",
   PAID: "success",
-  CANCELLED: "outline",
 };

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ExpenseActions } from "@/components/expenses/expense-actions";
 import { ExpenseAttachments } from "@/components/expenses/expense-attachments";
-import { getReviewedInfo, getVerifiedInfo } from "@/lib/expense-verification";
+import { getReviewedInfo } from "@/lib/expense-verification";
 import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
 import { formatDate, formatINR } from "@/lib/format";
 
@@ -50,10 +50,10 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   }
 
   const isOwner = expense.employeeId === session.sub;
-  const canEditAttachments = expense.status !== "PAID" && expense.status !== "CANCELLED";
+  const canEditAttachments = expense.status !== "PAID";
+  const isEditable = expense.status === "SUBMITTED" || expense.status === "APPROVAL_PENDING";
   const approvalsForHistory = expense.approvals.map((a) => ({ action: a.action, actedAt: a.actedAt, actedByName: a.actedBy.name }));
   const reviewedInfo = getReviewedInfo(approvalsForHistory);
-  const verifiedInfo = getVerifiedInfo(approvalsForHistory);
 
   return (
     <div>
@@ -65,7 +65,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <Badge variant={EXPENSE_STATUS_VARIANT[expense.status]} className="text-sm">
               {EXPENSE_STATUS_LABELS[expense.status]}
             </Badge>
-            {expense.status === "DRAFT" && (isOwner || session.roles.some((r) => ["SUPER_ADMIN", "ADMIN"].includes(r))) && (
+            {isEditable && (isOwner || session.roles.some((r) => ["SUPER_ADMIN", "ADMIN"].includes(r))) && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/expenses/${expense.id}/edit`}><Pencil className="h-4 w-4" /> Edit</Link>
               </Button>
@@ -100,11 +100,8 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
               <ExpenseActions
                 expenseId={expense.id}
                 status={expense.status}
-                roles={session.roles}
                 permissions={session.permissions}
-                isOwner={isOwner}
                 reviewedInfo={reviewedInfo ? { byName: reviewedInfo.byName, at: new Date(reviewedInfo.at).toISOString() } : null}
-                verifiedInfo={verifiedInfo ? { byName: verifiedInfo.byName, at: new Date(verifiedInfo.at).toISOString() } : null}
               />
             </CardContent>
           </Card>

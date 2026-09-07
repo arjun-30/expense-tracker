@@ -8,9 +8,10 @@ export async function getVendorsWithStats(companyId: string) {
   const vendors = await prisma.vendor.findMany({ where: { companyId }, orderBy: { name: "asc" } });
 
   const [expenseSums, poSums, paymentSums] = await Promise.all([
+    // Finalized spend = PAID only (invoice-presence-gated workflow).
     prisma.expense.groupBy({
       by: ["vendorId"],
-      where: { companyId, vendorId: { not: null }, status: { in: ["APPROVED", "PAID"] } },
+      where: { companyId, vendorId: { not: null }, status: "PAID" },
       _sum: { totalAmount: true },
     }),
     prisma.purchaseOrder.groupBy({ by: ["vendorId"], where: { companyId }, _count: { _all: true }, _sum: { totalAmount: true } }),

@@ -68,7 +68,7 @@ describe("Departmental roles without company-wide expense permissions stay depar
 
   it.each(departmentalRoles)("%s holds none of the company-wide expense permissions", (role) => {
     const perms = ROLE_PERMISSIONS[role];
-    expect(perms).not.toContain("expenses.verify");
+    expect(perms).not.toContain("expenses.review");
     expect(perms).not.toContain("expenses.approve");
     expect(perms).not.toContain("expenses.reject");
     expect(perms).not.toContain("expenses.mark_paid");

@@ -21,11 +21,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: "expenses.create", module: "expenses", description: "Create and edit draft expenses" },
   { code: "expenses.submit", module: "expenses", description: "Submit an expense for approval" },
   { code: "expenses.review", module: "expenses", description: "Move a submitted expense into review" },
-  { code: "expenses.verify", module: "expenses", description: "Verify an expense under review" },
-  { code: "expenses.approve", module: "expenses", description: "Approve an expense" },
+  { code: "expenses.approve", module: "expenses", description: "Approve an expense with no invoice attached" },
   { code: "expenses.reject", module: "expenses", description: "Reject an expense" },
-  { code: "expenses.mark_paid", module: "expenses", description: "Mark an approved expense as paid" },
-  { code: "expenses.cancel", module: "expenses", description: "Cancel a draft or submitted expense" },
+  { code: "expenses.mark_paid", module: "expenses", description: "Mark a reviewed expense as paid" },
 
   { code: "payments.view", module: "payments", description: "View vendor payments" },
   { code: "payments.create", module: "payments", description: "Record a vendor payment" },
@@ -88,7 +86,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   [ROLES.ADMIN]: except("users.manage", "settings.manage", "audit_logs.view", "roles.manage"),
   [ROLES.ACCOUNTS]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.review", "expenses.verify", "expenses.reject", "expenses.mark_paid", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit", "expenses.review", "expenses.reject", "expenses.mark_paid",
     "payments.view", "payments.create",
     "vendors.view", "vendors.manage",
     "purchases.view", "purchases.manage",
@@ -100,7 +98,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   [ROLES.PURCHASE_MANAGER]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit",
     "vendors.view", "vendors.manage",
     "purchases.view", "purchases.manage",
     "consumables.view", "consumables.manage",
@@ -108,7 +106,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   [ROLES.MAINTENANCE_MANAGER]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit",
     "machinery.view", "machinery.manage",
     "maintenance.view", "maintenance.manage",
     "consumables.view", "consumables.manage",
@@ -116,7 +114,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   [ROLES.TRANSPORT_MANAGER]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit",
     "vehicles.view", "vehicles.manage",
     "fuel.view", "fuel.manage",
     "transportation.view", "transportation.manage",
@@ -124,7 +122,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   [ROLES.EMPLOYEE]: [
     "dashboard.view",
-    "expenses.view", "expenses.create", "expenses.submit", "expenses.cancel",
+    "expenses.view", "expenses.create", "expenses.submit",
     "notifications.view",
   ],
 };

@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { canViewExpense, isAdminRole } from "@/lib/rbac";
@@ -21,13 +21,16 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
   ]);
   if (!expense) notFound();
   if (!canViewExpense(session, expense)) return <AccessRestricted />;
+  // Only editable before any review/approval decision has been made —
+  // replaces the old "only DRAFT is editable" rule now that DRAFT is gone.
+  if (expense.status !== "SUBMITTED" && expense.status !== "APPROVAL_PENDING") redirect(`/expenses/${id}`);
   const departments = isAdminRole(session)
     ? allDepartments
     : allDepartments.filter((d) => d.id === session.departmentId);
 
   return (
     <div>
-      <PageHeader title={`Edit ${expense.expenseNumber}`} description="Only draft expenses can be edited" />
+      <PageHeader title={`Edit ${expense.expenseNumber}`} description="Only expenses awaiting review or approval can be edited" />
       <ExpenseForm
         expenseId={expense.id}
         refData={{ categories, subcategories, departments, costCenters, vendors }}
