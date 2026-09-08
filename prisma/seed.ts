@@ -7,6 +7,19 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { ROLES } from "../src/lib/rbac-client";
 import { PERMISSIONS, ROLE_PERMISSIONS } from "../src/lib/auth/permission-catalog";
 
+// Specific, professional descriptions for each starter role — verbatim,
+// confirmed decisions (replaces the earlier generic "starter role seeded
+// for the ERP cutover" placeholder for every role).
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  [ROLES.SUPER_ADMIN]: "Has full access to system administration, configuration, users, roles, and organization-wide operations.",
+  [ROLES.ADMIN]: "Manages users, roles, system configuration, and organization-wide administrative operations.",
+  [ROLES.ACCOUNTS]: "Handles financial records, expense processing, payments, and accounting-related activities.",
+  [ROLES.PURCHASE_MANAGER]: "Manages purchasing activities, vendor-related operations, and procurement expenses.",
+  [ROLES.MAINTENANCE_MANAGER]: "Oversees maintenance-related operations, expenses, and departmental activities.",
+  [ROLES.TRANSPORT_MANAGER]: "Oversees transportation operations, related expenses, and departmental activities.",
+  [ROLES.EMPLOYEE]: "Creates, submits, and tracks personal business expenses and related requests.",
+};
+
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
@@ -142,7 +155,7 @@ async function main() {
     const role = await prisma.role.upsert({
       where: { companyId_name: { companyId, name: roleName } },
       update: {},
-      create: { companyId, name: roleName, isSystemRole: true, description: `${roleName} — starter role seeded for the ERP cutover` },
+      create: { companyId, name: roleName, isSystemRole: true, description: ROLE_DESCRIPTIONS[roleName] },
     });
     roles[roleName] = role;
 

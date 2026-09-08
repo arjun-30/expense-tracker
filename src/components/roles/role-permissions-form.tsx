@@ -116,10 +116,11 @@ export function RolePermissionsForm({
                     disabled={!canManage}
                     onCheckedChange={(checked) => toggle(p.code, checked === true)}
                   />
-                  <span>
-                    <span className="block font-medium">{p.description}</span>
-                    <span className="block font-mono text-xs text-muted-foreground">{p.code}</span>
-                  </span>
+                  {/* p.code stays the checkbox's underlying value/key above — it's
+                   * intentionally not rendered here, only the human-readable
+                   * description (already present on every PermissionDef in the
+                   * catalog; no separate label mapping needed). */}
+                  <span className="font-medium">{p.description}</span>
                 </label>
               ))}
             </div>
