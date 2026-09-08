@@ -3,30 +3,33 @@ import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-/** Clickable expense-status count card for the personal dashboard — links straight
- * to the pre-filtered Expenses list, so the viewer never has to touch the status
- * dropdown manually. `highlight` reuses the exact approval-pending-highlight
- * treatment already built for the Expense List row (globals.css), rather than
- * introducing a second version of the same styling. */
+/** Clickable expense-status count card. `href` is supplied by the caller (the
+ * personal dashboard points it at its own ?status= filter, same page) rather
+ * than being constructed here, so this component doesn't need to know where
+ * it's used. `tone` reuses this app's existing --destructive/--status-good
+ * tokens — the same families behind the Expense List's red row highlight and
+ * the "Paid" success badge — rather than introducing new colors; omit it for
+ * plain/default styling. */
 export function StatusCard({
   label,
   count,
   icon: Icon,
-  status,
-  highlight = false,
+  href,
+  tone,
 }: {
   label: string;
   count: number;
   icon: LucideIcon;
-  status: string;
-  highlight?: boolean;
+  href: string;
+  tone?: "destructive" | "success";
 }) {
   return (
-    <Link href={`/expenses?status=${status}`} className="block">
+    <Link href={href} className="block">
       <Card
         className={cn(
           "transition-shadow hover:shadow-md",
-          highlight && "border-l-4 border-l-destructive bg-destructive/10 hover:bg-destructive/15 approval-pending-highlight",
+          tone === "destructive" && "bg-destructive/10 hover:bg-destructive/15",
+          tone === "success" && "bg-status-good/10 hover:bg-status-good/15",
         )}
       >
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -34,7 +37,9 @@ export function StatusCard({
           <span
             className={cn(
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-              highlight ? "bg-destructive/15 text-destructive" : "bg-primary/10 text-primary",
+              tone === "destructive" && "bg-destructive/15 text-destructive",
+              tone === "success" && "bg-status-good/15 text-status-good",
+              !tone && "bg-primary/10 text-primary",
             )}
           >
             <Icon className="h-4 w-4" />
