@@ -1,6 +1,7 @@
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ export default async function TransportationReportPage({ searchParams }: { searc
 
   return (
     <div>
+      <BackButton />
       <PageHeader title="Transportation Report" description={`${rows.length} trips`} action={<ReportExportButtons type="transportation" query={sp} />} />
       <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
         <div className="space-y-1"><label className="text-xs text-muted-foreground">From</label><Input type="date" name="from" defaultValue={sp.from} /></div>

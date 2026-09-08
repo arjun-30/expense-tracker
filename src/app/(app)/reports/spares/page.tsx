@@ -1,6 +1,7 @@
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ReportExportButtons } from "@/components/reports/export-buttons";
@@ -16,6 +17,7 @@ export default async function SpareReportPage({ searchParams }: { searchParams: 
 
   return (
     <div>
+      <BackButton />
       <PageHeader title="Spare Parts Report" description={`${rows.length} parts`} action={<ReportExportButtons type="spares" query={sp} />} />
       <div className="rounded-lg border bg-card">
         <Table>

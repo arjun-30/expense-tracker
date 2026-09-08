@@ -3,6 +3,7 @@ import { guardModule } from "@/lib/guards";
 import { isAdminRole } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ export default async function ExpenseReportPage({ searchParams }: { searchParams
 
   return (
     <div>
+      <BackButton />
       <PageHeader title="Expense Report" description={`${rows.length} records — total ${formatINR(total)}`} action={<ReportExportButtons type="expenses" query={sp} />} />
 
       <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
