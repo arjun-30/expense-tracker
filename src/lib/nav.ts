@@ -25,6 +25,9 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Sub-items nested under this one (e.g. Settings -> Users & Roles, Roles).
+   * One level deep only — no nav item here currently needs more than that. */
+  children?: NavItem[];
 }
 
 export interface NavSection {
@@ -34,7 +37,10 @@ export interface NavSection {
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    items: [{ key: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+    items: [
+      { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { key: "notifications", label: "Notifications", href: "/notifications", icon: Bell },
+    ],
   },
   {
     label: "Expenses",
@@ -71,16 +77,22 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Insights",
     items: [
       { key: "reports", label: "Reports", href: "/reports", icon: BarChart3 },
-      { key: "notifications", label: "Notifications", href: "/notifications", icon: Bell },
       { key: "auditLogs", label: "Audit Logs", href: "/audit-logs", icon: ScrollText },
     ],
   },
   {
     label: "Administration",
     items: [
-      { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
-      { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
-      { key: "settings", label: "Settings", href: "/settings", icon: Settings },
+      {
+        key: "settings",
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+        children: [
+          { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
+          { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
+        ],
+      },
     ],
   },
 ];

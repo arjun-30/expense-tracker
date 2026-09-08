@@ -11,6 +11,8 @@
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-lexend);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-heading: var(--sidebar-heading);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
@@ -35,6 +37,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-approval-pending-accent: var(--approval-pending-accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -72,6 +75,15 @@
   --accent: oklch(0.936 0.023 264.5);
   --accent-foreground: oklch(0.302 0.09 262);
   --destructive: oklch(0.577 0.245 27.325);
+  /* A brighter, more saturated red than --destructive itself, used ONLY for
+   * the Approval Pending row's left-border accent on the Expense List — a
+   * deliberately more vivid/eye-catching red for that one accent, distinct
+   * from the standard destructive red used for Reject buttons, Rejected
+   * badges, etc. --destructive is already near sRGB's gamut ceiling for this
+   * hue at its current chroma, so "brighter" here comes from a modest
+   * lightness increase (0.577 -> 0.62) alongside the highest chroma that
+   * still renders without clipping at that lightness. */
+  --approval-pending-accent: oklch(0.62 0.25 27.325);
   --border: oklch(0.914 0.012 258);
   --input: oklch(0.914 0.012 258);
   --ring: oklch(0.51 0.19 262.1);
@@ -89,13 +101,63 @@
   --status-critical: #dc2626;
   --delta-good: #059669;
   --radius: 0.5rem;
-  --sidebar: oklch(0.208 0.042 265.75);
-  --sidebar-foreground: oklch(0.87 0.014 258);
+  /* Pewter Grey sidebar theme, light-on-dark: blue stays reserved for
+   * sidebar-primary (logo badge, active-item accent bar/icon) below, which
+   * is intentionally identical to --primary and untouched by this change.
+   *
+   * --sidebar was darkened from the prior iteration (oklch L 0.656 -> 0.5,
+   * same hue/chroma family) specifically to make light nav text pass WCAG
+   * AA: WCAG's contrast formula is not symmetric around a background's
+   * perceptual midpoint — for this hue, the crossover point where light and
+   * dark text reach equal max contrast sits at relative luminance ~0.179,
+   * and the prior pewter (~0.282) sat above it, meaning dark text (5.60:1)
+   * actually had *more* headroom than white text (capped at 3.16:1, an AA
+   * failure) against it. The new, darker pewter's relative luminance
+   * (~0.125) sits well below that crossover, so white nav text now reaches
+   * 6.01:1. This also improves separation from the white main content area
+   * (3.16:1 -> 6.01:1) as a side effect.
+   *
+   * --sidebar-foreground: near-white (reuses the app's existing
+   * --primary-foreground/--sidebar-primary-foreground value) for normal
+   * nav text/icons, 5.77:1 against the new pewter; hover state (see
+   * app-sidebar.tsx) goes to pure white, 6.01:1, for a genuinely brighter
+   * step. --sidebar-heading is new (section labels: EXPENSES, FLEET, etc.)
+   * — softer than nav text but still clears AA on its own (4.73:1) at the
+   * small size those labels render at.
+   *
+   * --sidebar-accent is now white (active item's background, was grey) —
+   * --sidebar-accent-foreground stays exactly the same dark charcoal value
+   * used by the *previous* iteration's whole sidebar, now scoped to just
+   * the active item, 17.72:1 against the new white background.
+   *
+   * Known tradeoff, reported rather than silently accepted: the logo badge
+   * (bg-sidebar-primary, blue) sits directly on --sidebar and now has only
+   * 1.00:1 luminance contrast against it (was 1.89:1) — the darkening that
+   * fixes nav-text accessibility happens to land pewter very close to
+   * blue's own luminance. Not a WCAG failure (the badge is decorative, not
+   * an interactive/text UI component; its own icon-on-blue contrast is
+   * unaffected), but visually the badge now relies on hue difference alone
+   * to read against the sidebar — flagged for awareness. */
+  --sidebar: oklch(0.5 0.008 260.7);
+  --sidebar-foreground: oklch(0.985 0.01 255);
+  --sidebar-heading: oklch(0.92 0.006 265);
+  /* Hover/focus background for inactive nav items — deliberately DARKER
+   * than --sidebar, not lighter. Lightening was tried first (the more
+   * common hover convention) but this pewter's WCAG relative luminance
+   * (~0.125) already sits below the light/dark contrast crossover point
+   * for this hue (~0.179, see --sidebar's own comment above), so any
+   * lighter hover shade quickly erodes headroom for white text: the
+   * lightest usable step (oklch L 0.57) only clears white-text AA by a
+   * hair (4.48:1) while barely differing from --sidebar (1.34:1
+   * distinction). Darkening instead gives both a clearer background step
+   * (1.53:1 distinction, vs 1.34:1 lightening) and much stronger text
+   * contrast (9.19:1, vs 4.48:1) — strictly better on every axis. */
+  --sidebar-hover: oklch(0.4 0.008 260.7);
   --sidebar-primary: oklch(0.51 0.19 262.1);
   --sidebar-primary-foreground: oklch(0.985 0.01 255);
-  --sidebar-accent: oklch(0.279 0.045 262);
-  --sidebar-accent-foreground: oklch(0.985 0.01 255);
-  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-accent: oklch(1 0 0);
+  --sidebar-accent-foreground: oklch(0.210 0.006 285.9);
+  --sidebar-border: oklch(0.914 0.012 258);
   --sidebar-ring: oklch(0.51 0.19 262.1);
 }
 
@@ -159,13 +221,31 @@
  * class's own Tailwind utilities where it's used), and this adds a gentle
  * glow pulse on top, gated behind prefers-reduced-motion so users who've
  * asked for reduced motion still get the static highlight, just without
- * the animation. Deliberately not a rapid on/off blink (WCAG 2.2.2). */
+ * the animation. Deliberately not a rapid on/off blink (WCAG 2.2.2).
+ *
+ * The full-perimeter border itself is also a box-shadow (see the
+ * shadow-[inset_...] utility where this class is used) rather than a real
+ * `border` on <tr> — every <table> in this app has border-collapse:collapse
+ * from Tailwind's preflight, under which a <tr>'s own border is unreliable
+ * across browsers (collapsed-border resolution operates on cell borders,
+ * not row borders). box-shadow isn't part of the table border model at
+ * all, so it renders correctly regardless. Each keyframe below layers that
+ * same inset border shadow as a first, constant value alongside the
+ * animated glow — an animated box-shadow REPLACES the element's box-shadow
+ * for the property's whole value each frame, it doesn't compose with a
+ * separately-applied static box-shadow class, so the border has to live
+ * inside these keyframes too or it would vanish for the animation's
+ * duration on every cycle. */
 @keyframes approval-pending-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--destructive) 30%, transparent);
+    box-shadow:
+      inset 0 0 0 2px var(--approval-pending-accent),
+      0 0 0 0 color-mix(in oklch, var(--destructive) 30%, transparent);
   }
   50% {
-    box-shadow: 0 0 8px 2px color-mix(in oklch, var(--destructive) 0%, transparent);
+    box-shadow:
+      inset 0 0 0 2px var(--approval-pending-accent),
+      0 0 8px 2px color-mix(in oklch, var(--destructive) 0%, transparent);
   }
 }
 
@@ -173,4 +253,17 @@
   .approval-pending-highlight {
     animation: approval-pending-pulse 2.5s ease-in-out infinite;
   }
+}
+
+/* Hides the scrollbar track/thumb on the sidebar's nav scroll container
+ * only (see app-sidebar.tsx) — scroll behavior itself is untouched, this
+ * is purely a visual treatment via the standard cross-browser approach.
+ * Scoped to this one class so it cannot affect the main content area's
+ * scrollbar, which has no reason to ever receive this class. */
+.sidebar-scroll {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE, legacy Edge */
+}
+.sidebar-scroll::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, modern Edge */
 }
