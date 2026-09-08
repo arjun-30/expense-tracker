@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ExpenseActions } from "@/components/expenses/expense-actions";
 import { ExpenseAttachments } from "@/components/expenses/expense-attachments";
+import { BackButton } from "@/components/back-button";
 import { getReviewedInfo } from "@/lib/expense-verification";
 import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
 import { formatDate, formatINR } from "@/lib/format";
@@ -57,6 +58,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div>
+      <BackButton />
       <PageHeader
         title={expense.expenseNumber}
         description={expense.description ?? undefined}
@@ -102,6 +104,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 status={expense.status}
                 permissions={session.permissions}
                 reviewedInfo={reviewedInfo ? { byName: reviewedInfo.byName, at: new Date(reviewedInfo.at).toISOString() } : null}
+                submitterName={expense.employee.name}
               />
             </CardContent>
           </Card>

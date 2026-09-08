@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Eye } from "lucide-react";
+import { Plus } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { isAdminRole, expenseVisibilityWhere } from "@/lib/rbac";
@@ -8,14 +8,13 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { ExpenseRow } from "@/components/expenses/expense-row";
 import { DataTablePagination } from "@/components/data-table-pagination";
-import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
-import { formatDate, formatINR } from "@/lib/format";
-import { ExpenseStatus } from "@/generated/prisma/enums";
+import { EXPENSE_STATUS_LABELS, VALID_EXPENSE_STATUSES } from "@/lib/status-labels";
+import type { ExpenseStatus } from "@/generated/prisma/enums";
 import { hasRole } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
-import { cn, parseFilterParam } from "@/lib/utils";
+import { parseFilterParam } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -25,7 +24,12 @@ import {
 } from "@/components/ui/select";
 
 const PAGE_SIZE = 20;
-const VALID_EXPENSE_STATUSES = new Set<string>(Object.values(ExpenseStatus));
+// APPROVED is a legacy status with no active workflow (no transition ever
+// assigns or leaves it in the current TRANSITIONS state machine — it only
+// ever appears on historical records predating the invoice-based workflow
+// replacement). Excluded from the filter dropdown only; EXPENSE_STATUS_LABELS
+// itself stays complete so any such record still renders a correct badge.
+const FILTERABLE_STATUS_ENTRIES = Object.entries(EXPENSE_STATUS_LABELS).filter(([value]) => value !== "APPROVED");
 
 export default async function ExpensesPage({
   searchParams,
@@ -107,7 +111,7 @@ export default async function ExpensesPage({
           <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            {Object.entries(EXPENSE_STATUS_LABELS).map(([value, label]) => (
+            {FILTERABLE_STATUS_ENTRIES.map(([value, label]) => (
               <SelectItem key={value} value={value}>{label}</SelectItem>
             ))}
           </SelectContent>
@@ -143,48 +147,19 @@ export default async function ExpensesPage({
           </TableHeader>
           <TableBody>
             {expenses.map((e) => (
-              <TableRow
+              <ExpenseRow
                 key={e.id}
-                className={cn(
-                  "cursor-pointer",
-                  // Persistent, accessible "needs approval" highlight — a
-                  // static red-tinted background/left-border always applies;
-                  // approval-pending-highlight (globals.css) adds a gentle
-                  // glow pulse on top, but only for prefers-reduced-motion:
-                  // no-preference. Derived live from status, so it vanishes
-                  // the moment this expense is approved or rejected.
-                  e.status === "APPROVAL_PENDING" &&
-                    "border-l-4 border-l-destructive bg-destructive/10 hover:bg-destructive/15 approval-pending-highlight"
-                )}
-              >
-                <TableCell className="font-medium">
-                  <Link href={`/expenses/${e.id}`} className="hover:underline">{e.expenseNumber}</Link>
-                </TableCell>
-                <TableCell>{formatDate(e.expenseDate)}</TableCell>
-                <TableCell>{e.category.name}</TableCell>
-                <TableCell>{e.vendor?.name ?? "—"}</TableCell>
-                <TableCell>{e.department.name}</TableCell>
-                <TableCell>{e.employee.name}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatINR(Number(e.totalAmount))}</TableCell>
-                <TableCell>
-                  <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABELS[e.status]}</Badge>
-                </TableCell>
-                <TableCell>
-                  {e.attachments[0] ? (
-                    <a
-                      href={`/api/files/${e.attachments[0].storageKey}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-                      title="View bill"
-                    >
-                      <Eye className="h-4 w-4" /> View Bill
-                    </a>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">No Bill</span>
-                  )}
-                </TableCell>
-              </TableRow>
+                id={e.id}
+                expenseNumber={e.expenseNumber}
+                expenseDate={e.expenseDate}
+                categoryName={e.category.name}
+                vendorName={e.vendor?.name ?? null}
+                departmentName={e.department.name}
+                employeeName={e.employee.name}
+                totalAmount={Number(e.totalAmount)}
+                status={e.status}
+                billStorageKey={e.attachments[0]?.storageKey ?? null}
+              />
             ))}
             {expenses.length === 0 && (
               <TableRow>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { STATUS_ACTIONS, visibleActionsFor } from "@/components/expenses/expense-actions";
+import { STATUS_ACTIONS, visibleActionsFor, NEXT_STAGE_LABEL } from "@/components/expenses/expense-actions";
 import { getReviewedInfo } from "@/lib/expense-verification";
 import { ROLES } from "@/lib/rbac-client";
 import { ROLE_PERMISSIONS } from "@/lib/auth/permission-catalog";
@@ -38,8 +38,8 @@ describe("STATUS_ACTIONS audit: every TRANSITIONS entry (src/lib/actions/expense
 });
 
 describe("Button labels", () => {
-  it("SUBMITTED's review action is labeled 'Move to Review'", () => {
-    expect(labelFor("SUBMITTED", "review")).toBe("Move to Review");
+  it("SUBMITTED's review action is labeled 'Mark as Reviewed'", () => {
+    expect(labelFor("SUBMITTED", "review")).toBe("Mark as Reviewed");
   });
 
   it("APPROVAL_PENDING's approve action is labeled 'Approve'", () => {
@@ -51,10 +51,28 @@ describe("Button labels", () => {
   });
 });
 
+describe("NEXT_STAGE_LABEL: workflow-summary 'Next' text, only where a single clear next stage exists", () => {
+  it("SUBMITTED's next stage is Review", () => {
+    expect(NEXT_STAGE_LABEL.SUBMITTED).toBe("Review");
+  });
+
+  it("REVIEWED's next stage is Payment", () => {
+    expect(NEXT_STAGE_LABEL.REVIEWED).toBe("Payment");
+  });
+
+  it("APPROVAL_PENDING has no entry — its current-stage text already conveys what's pending", () => {
+    expect(NEXT_STAGE_LABEL.APPROVAL_PENDING).toBeUndefined();
+  });
+
+  it.each(["REJECTED", "PAID", "APPROVED"])("%s (terminal/unreachable) has no next-stage entry", (status) => {
+    expect(NEXT_STAGE_LABEL[status as keyof typeof NEXT_STAGE_LABEL]).toBeUndefined();
+  });
+});
+
 describe("ACCOUNTS: Scenario A path (with invoice) — review, reject, mark paid; never approve", () => {
   const accountsPermissions = ROLE_PERMISSIONS[ROLES.ACCOUNTS];
 
-  it("sees Move to Review and Reject on SUBMITTED", () => {
+  it("sees Mark as Reviewed and Reject on SUBMITTED", () => {
     const keys = keysFor("SUBMITTED", accountsPermissions);
     expect(keys).toContain("review");
     expect(keys).toContain("reject");
@@ -75,7 +93,7 @@ describe("Admins: full Scenario B gate (Approve/Reject on APPROVAL_PENDING) plus
     expect(keys.sort()).toEqual(["approve", "reject"].sort());
   });
 
-  it.each([ROLES.SUPER_ADMIN, ROLES.ADMIN])("%s sees Move to Review and Reject on SUBMITTED", (role) => {
+  it.each([ROLES.SUPER_ADMIN, ROLES.ADMIN])("%s sees Mark as Reviewed and Reject on SUBMITTED", (role) => {
     const keys = keysFor("SUBMITTED", ROLE_PERMISSIONS[role]);
     expect(keys.sort()).toEqual(["review", "reject"].sort());
   });

@@ -5,7 +5,7 @@ export interface ReviewedInfo {
   at: Date | string;
 }
 
-/** Whether an expense has been through the "Move to Review" action
+/** Whether an expense has been through the "Mark as Reviewed" action
  * (TRANSITIONS.review, SUBMITTED -> REVIEWED) — used to show a "Reviewed by
  * <name> on <date>" note that survives even after the expense later moves
  * on to PAID (whose own status no longer says "REVIEWED"). Since the current

@@ -15,11 +15,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { transitionExpenseAction } from "@/lib/actions/expenses";
 import type { ExpenseStatus } from "@/generated/prisma/enums";
 import type { ReviewedInfo } from "@/lib/expense-verification";
+import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
 import { formatDate } from "@/lib/format";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock } from "lucide-react";
+
+/** The immediate next stage's label, only where a single one clearly exists.
+ * APPROVAL_PENDING deliberately has no entry here — its actual next transition
+ * (admin approval, back to SUBMITTED) reads confusingly as a standalone "Next:
+ * Submitted" line, and its current-stage text ("Awaiting admin approval")
+ * already conveys what's pending without it. REJECTED/PAID are terminal. */
+export const NEXT_STAGE_LABEL: Partial<Record<ExpenseStatus, string>> = {
+  SUBMITTED: "Review",
+  REVIEWED: "Payment",
+};
 
 // Exported so tests can assert this stays in sync with the TRANSITIONS state
 // machine in src/lib/actions/expenses.ts (which can't be imported directly —
@@ -28,7 +40,7 @@ import { CheckCircle2 } from "lucide-react";
 // matching entry here for each status in its `from` list.
 export const STATUS_ACTIONS: Record<string, { key: string; label: string; variant?: "default" | "destructive" | "outline"; permission: string }[]> = {
   SUBMITTED: [
-    { key: "review", label: "Move to Review", permission: "expenses.review" },
+    { key: "review", label: "Mark as Reviewed", permission: "expenses.review" },
     { key: "reject", label: "Reject", variant: "destructive", permission: "expenses.reject" },
   ],
   APPROVAL_PENDING: [
@@ -50,11 +62,13 @@ export function ExpenseActions({
   status,
   permissions,
   reviewedInfo,
+  submitterName,
 }: {
   expenseId: string;
   status: ExpenseStatus;
   permissions: string[];
   reviewedInfo: ReviewedInfo | null;
+  submitterName: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -65,6 +79,7 @@ export function ExpenseActions({
 
   const actions = visibleActionsFor(status, { permissions });
   const showReviewedNote = !!reviewedInfo && (status === "REVIEWED" || status === "PAID");
+  const nextStage = NEXT_STAGE_LABEL[status];
 
   function run(key: string, withRemarks?: string) {
     startTransition(async () => {
@@ -78,16 +93,47 @@ export function ExpenseActions({
     });
   }
 
-  if (actions.length === 0 && !showReviewedNote) return null;
-
   return (
     <div className="flex flex-wrap gap-2">
+      {/* Workflow summary — always rendered, regardless of whether any action
+       * buttons are available below it. A viewer with no permitted actions
+       * (e.g. an EMPLOYEE on their own expense) must still see clear status
+       * information rather than an empty section; a viewer who *can* act
+       * sees this exact same summary, with their buttons rendered after it. */}
+      <div className="flex w-full items-center justify-between text-sm">
+        <span className="text-muted-foreground">Status</span>
+        <Badge variant={EXPENSE_STATUS_VARIANT[status]}>{EXPENSE_STATUS_LABELS[status]}</Badge>
+      </div>
+      <div className="flex w-full items-center justify-between text-sm">
+        <span className="text-muted-foreground">Submitted by</span>
+        <span className="font-medium">{submitterName}</span>
+      </div>
+
       {showReviewedNote && reviewedInfo && (
         <div className="flex w-full items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>Reviewed by {reviewedInfo.byName} on {formatDate(reviewedInfo.at)}</span>
         </div>
       )}
+      {!showReviewedNote && status === "SUBMITTED" && (
+        <div className="flex w-full items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+          <Clock className="h-4 w-4 shrink-0" />
+          <span>Awaiting review</span>
+        </div>
+      )}
+      {!showReviewedNote && status === "APPROVAL_PENDING" && (
+        <div className="flex w-full items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+          <Clock className="h-4 w-4 shrink-0" />
+          <span>Awaiting admin approval</span>
+        </div>
+      )}
+      {status === "REJECTED" && (
+        <div className="flex w-full items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+          <span>This expense was rejected.</span>
+        </div>
+      )}
+      {nextStage && <p className="w-full text-xs text-muted-foreground">Next: {nextStage}</p>}
+
       {actions.map((a) =>
         a.key === "reject" ? (
           <Button key={a.key} variant={a.variant} disabled={pending} onClick={() => setRejectOpen(true)}>
