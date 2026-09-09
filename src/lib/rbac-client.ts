@@ -52,3 +52,17 @@ export function canAccessModuleClient(roles: string[], moduleKey: string): boole
   if (!allowed) return false;
   return allowed.some((r) => roles.includes(r));
 }
+
+const MANAGER_ROLES: RoleName[] = [ROLES.ACCOUNTS, ROLES.PURCHASE_MANAGER, ROLES.MAINTENANCE_MANAGER, ROLES.TRANSPORT_MANAGER];
+
+/** Sidebar panel label for the logged-in user's role(s). A session can in
+ * theory hold more than one role (the schema supports it, even though the
+ * Users UI today only ever assigns one) -- in that case the most privileged
+ * applicable label wins: SUPER_ADMIN > ADMIN > EMPLOYEE > any manager role. */
+export function getPanelLabel(roles: string[]): string {
+  if (roles.includes(ROLES.SUPER_ADMIN)) return "Super Admin Panel";
+  if (roles.includes(ROLES.ADMIN)) return "Admin Panel";
+  if (roles.includes(ROLES.EMPLOYEE)) return "Employee Panel";
+  if (roles.some((r) => MANAGER_ROLES.includes(r as RoleName))) return "Manager Panel";
+  return "Panel";
+}

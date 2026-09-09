@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Factory, ChevronDown } from "lucide-react";
 import { NAV_SECTIONS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import { canAccessModuleClient } from "@/lib/rbac-client";
+import { canAccessModuleClient, getPanelLabel } from "@/lib/rbac-client";
 
 /** Shared row styling/active-state logic for both top-level nav items and
  * nested children — kept as one function so the two render sites (below)
@@ -38,8 +38,9 @@ export function AppSidebar({ roles }: { roles: string[] }) {
           <Factory className="h-4 w-4" />
         </span>
         <div className="min-w-0 leading-tight">
-          <p className="truncate font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">Cost Control</p>
-          <p className="truncate text-[11px] text-sidebar-foreground">Expense Management</p>
+          <p className="truncate font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">Expense Management</p>
+          <p className="truncate text-[11px] text-sidebar-foreground">Cost Control</p>
+          <p className="truncate text-[10px] text-sidebar-heading">{getPanelLabel(roles)}</p>
         </div>
       </div>
       <nav className="sidebar-scroll flex-1 space-y-5 overflow-y-auto px-3 py-4">
