@@ -15,7 +15,7 @@ const PURCHASE_PERMISSIONS = ["purchases.manage"];
 const PAYMENT_PERMISSIONS = ["payments.create"];
 
 const poItemSchema = z.object({
-  consumableId: z.string().optional().nullable(),
+  itemType: z.enum(["SPARE_PARTS", "CONSUMABLES"]),
   description: z.string().min(1),
   quantity: z.coerce.number().positive(),
   unitPrice: z.coerce.number().min(0),
@@ -54,8 +54,8 @@ export async function createPurchaseOrderAction(input: PurchaseOrderInput): Prom
           totalAmount,
           createdById: session.sub,
           status: "ORDERED",
-          items: { create: itemsWithTotals.map(({ consumableId, description, quantity, unitPrice, gstPercent, total }) => ({
-            consumableId: consumableId || null,
+          items: { create: itemsWithTotals.map(({ itemType, description, quantity, unitPrice, gstPercent, total }) => ({
+            itemType,
             description,
             quantity,
             unitPrice,

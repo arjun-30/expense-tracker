@@ -14,12 +14,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createPurchaseOrderAction } from "@/lib/actions/purchases";
 
+const ITEM_TYPES = [
+  { value: "SPARE_PARTS", label: "Spare Parts" },
+  { value: "CONSUMABLES", label: "Consumables" },
+] as const;
+
+// Item Type is a plain category label chosen per row — not a link to any
+// inventory record. Item Name is always manually entered, never looked up.
 const itemSchema = z.object({
-  consumableId: z.string().optional(),
-  description: z.string().min(1, "Required"),
+  itemType: z.string().min(1, "Required"),
+  itemName: z.string().min(1, "Required"),
   quantity: z.number().positive(),
-  unitPrice: z.number().min(0),
-  gstPercent: z.number().min(0),
+  amount: z.number().min(0),
 });
 const schema = z.object({
   vendorId: z.string().min(1, "Vendor is required"),
@@ -30,17 +36,15 @@ type FormValues = z.infer<typeof schema>;
 
 export function PurchaseOrderFormDialog({
   vendors,
-  spareParts,
 }: {
   vendors: { id: string; name: string }[];
-  spareParts: { id: string; name: string; unitCost: number }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { register, control, handleSubmit, setValue, formState: { errors } } = useForm<FormValues>({
+  const { register, control, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { items: [{ description: "", quantity: 1, unitPrice: 0, gstPercent: 18 }] },
+    defaultValues: { items: [{ itemType: "", itemName: "", quantity: 1, amount: 0 }] },
   });
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
 
@@ -49,7 +53,15 @@ export function PurchaseOrderFormDialog({
     const result = await createPurchaseOrderAction({
       vendorId: values.vendorId,
       expectedDelivery: values.expectedDelivery ? new Date(values.expectedDelivery) : null,
-      items: values.items.map((it) => ({ ...it, consumableId: it.consumableId || null })),
+      items: values.items.map((it) => ({
+        itemType: it.itemType as never,
+        description: it.itemName,
+        quantity: it.quantity,
+        unitPrice: it.amount,
+        // The simplified item form has no GST input — these items are for
+        // purchase-tracking/expense purposes only, not tax-itemized billing.
+        gstPercent: 0,
+      })),
     });
     setSubmitting(false);
     if (!result.success) {
@@ -95,39 +107,35 @@ export function PurchaseOrderFormDialog({
           <div className="space-y-2">
             <Label>Items *</Label>
             {fields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-12 items-end gap-2">
-                <div className="col-span-4 space-y-1">
+              <div key={field.id} className="grid grid-cols-12 items-start gap-2">
+                <div className="col-span-3 space-y-1">
                   <Controller
                     control={control}
-                    name={`items.${index}.consumableId`}
+                    name={`items.${index}.itemType`}
                     render={({ field: f }) => (
-                      <Select
-                        onValueChange={(v) => {
-                          f.onChange(v);
-                          const spare = spareParts.find((s) => s.id === v);
-                          if (spare) {
-                            setValue(`items.${index}.description`, spare.name);
-                            setValue(`items.${index}.unitPrice`, spare.unitCost);
-                          }
-                        }}
-                        value={f.value}
-                      >
-                        <SelectTrigger><SelectValue placeholder="Spare (optional)" /></SelectTrigger>
+                      <Select onValueChange={f.onChange} value={f.value}>
+                        <SelectTrigger><SelectValue placeholder="Item type" /></SelectTrigger>
                         <SelectContent>
-                          {spareParts.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                          {ITEM_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     )}
                   />
+                  {errors.items?.[index]?.itemType && (
+                    <p className="text-xs text-destructive">{errors.items[index]?.itemType?.message}</p>
+                  )}
                 </div>
-                <div className="col-span-3">
-                  <Input placeholder="Description" {...register(`items.${index}.description`)} />
+                <div className="col-span-4 space-y-1">
+                  <Input placeholder="Item name" {...register(`items.${index}.itemName`)} />
+                  {errors.items?.[index]?.itemName && (
+                    <p className="text-xs text-destructive">{errors.items[index]?.itemName?.message}</p>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <Input type="number" step="1" min="1" placeholder="Qty" {...register(`items.${index}.quantity`, { valueAsNumber: true })} />
                 </div>
                 <div className="col-span-2">
-                  <Input type="number" step="0.01" min="0" placeholder="Unit price" {...register(`items.${index}.unitPrice`, { valueAsNumber: true })} />
+                  <Input type="number" step="0.01" min="0" placeholder="Amount" {...register(`items.${index}.amount`, { valueAsNumber: true })} />
                 </div>
                 <div className="col-span-1">
                   <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} disabled={fields.length === 1}>
@@ -136,7 +144,7 @@ export function PurchaseOrderFormDialog({
                 </div>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={() => append({ description: "", quantity: 1, unitPrice: 0, gstPercent: 18 })}>
+            <Button type="button" variant="outline" size="sm" onClick={() => append({ itemType: "", itemName: "", quantity: 1, amount: 0 })}>
               <Plus className="h-4 w-4" /> Add item
             </Button>
           </div>
