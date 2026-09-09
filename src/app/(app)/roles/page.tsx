@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { RoleFormDialog } from "@/components/roles/role-form-dialog";
+import { RoleRow } from "@/components/roles/role-row";
 import { hasPermission } from "@/lib/auth/permissions";
 
 export default async function RolesPage() {
@@ -40,17 +39,15 @@ export default async function RolesPage() {
           </TableHeader>
           <TableBody>
             {roles.map((r) => (
-              <TableRow key={r.id} className="cursor-pointer">
-                <TableCell className="font-medium">
-                  <Link href={`/roles/${r.id}`} className="hover:underline">{r.name}</Link>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.description ?? "—"}</TableCell>
-                <TableCell>
-                  <Badge variant={r.isSystemRole ? "outline" : "default"}>{r.isSystemRole ? "System" : "Custom"}</Badge>
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{r._count.userRoles}</TableCell>
-                <TableCell className="text-right tabular-nums">{r._count.rolePermissions}</TableCell>
-              </TableRow>
+              <RoleRow
+                key={r.id}
+                id={r.id}
+                name={r.name}
+                description={r.description}
+                isSystemRole={r.isSystemRole}
+                userCount={r._count.userRoles}
+                permissionCount={r._count.rolePermissions}
+              />
             ))}
             {roles.length === 0 && (
               <TableRow>

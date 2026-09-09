@@ -3,6 +3,7 @@ import { guardModule } from "@/lib/guards";
 import { isAdminRole } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { ExpenseForm } from "@/components/expenses/expense-form";
 
 export default async function NewExpensePage() {
@@ -22,6 +23,7 @@ export default async function NewExpensePage() {
 
   return (
     <div>
+      <BackButton />
       <PageHeader title="New Expense" description="Create a new expense record (saved as draft)" />
       <ExpenseForm refData={{ categories, subcategories, departments, costCenters, vendors }} />
     </div>

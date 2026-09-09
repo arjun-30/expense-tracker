@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RoleFormDialog } from "@/components/roles/role-form-dialog";
@@ -30,6 +31,7 @@ export default async function RoleDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
+      <BackButton />
       <PageHeader
         title={role.name}
         description={role.description ?? undefined}

@@ -4,6 +4,7 @@ import { guardModule } from "@/lib/guards";
 import { canViewExpense, isAdminRole } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { BackButton } from "@/components/back-button";
 import { ExpenseForm } from "@/components/expenses/expense-form";
 
 export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,6 +31,7 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
 
   return (
     <div>
+      <BackButton />
       <PageHeader title={`Edit ${expense.expenseNumber}`} description="Only expenses awaiting review or approval can be edited" />
       <ExpenseForm
         expenseId={expense.id}
