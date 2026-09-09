@@ -6,13 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createMachineAction } from "@/lib/actions/maintenance";
+import { createMachineAction, updateMachineAction } from "@/lib/actions/maintenance";
+
+const MACHINE_STATUSES = ["RUNNING", "IDLE", "UNDER_MAINTENANCE", "BREAKDOWN", "RETIRED"] as const;
 
 const schema = z.object({
   machineCode: z.string().min(1, "Required"),
@@ -22,37 +24,62 @@ const schema = z.object({
   location: z.string().optional(),
   departmentId: z.string().optional(),
   purchaseCost: z.number().min(0).optional(),
+  status: z.enum(MACHINE_STATUSES),
 });
 type FormValues = z.infer<typeof schema>;
 
-export function MachineFormDialog({ departments }: { departments: { id: string; name: string }[] }) {
+export function MachineFormDialog({
+  machineId,
+  departments,
+  defaultValues,
+  trigger,
+}: {
+  machineId?: string;
+  departments: { id: string; name: string }[];
+  defaultValues?: Partial<FormValues>;
+  trigger?: "icon" | "button";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { register, control, handleSubmit, formState: { errors } } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  const { register, control, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    // New machines always default to RUNNING and don't expose a status field
+    // in create mode (unchanged create behavior); editing an existing
+    // machine always pre-fills its actual current status via defaultValues.
+    defaultValues: { status: "RUNNING", ...defaultValues },
+  });
 
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
-    const result = await createMachineAction({
+    const input = {
       ...values,
       manufacturer: values.manufacturer || null,
       model: values.model || null,
       location: values.location || null,
       departmentId: values.departmentId || null,
       purchaseCost: values.purchaseCost ?? null,
-    });
+    };
+    const result = machineId ? await updateMachineAction(machineId, input) : await createMachineAction(input);
     setSubmitting(false);
     if (!result.success) { toast.error(result.error ?? "Something went wrong"); return; }
-    toast.success("Machine added");
+    toast.success(machineId ? "Machine updated" : "Machine added");
     setOpen(false);
+    reset();
     router.refresh();
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Add Machine</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger === "icon" ? (
+          <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
+        ) : (
+          <Button><Plus className="h-4 w-4" /> Add Machine</Button>
+        )}
+      </DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>New machine</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{machineId ? "Edit machine" : "New machine"}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label htmlFor="machineCode">Machine code *</Label>
@@ -89,6 +116,19 @@ export function MachineFormDialog({ departments }: { departments: { id: string; 
             <Label htmlFor="purchaseCost">Purchase price (₹)</Label>
             <Input id="purchaseCost" type="number" step="0.01" {...register("purchaseCost", { valueAsNumber: true })} />
           </div>
+          {machineId && (
+            <div className="space-y-1">
+              <Label>Status</Label>
+              <Controller control={control} name="status" render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {MACHINE_STATUSES.map((s) => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )} />
+            </div>
+          )}
           <DialogFooter className="col-span-2">
             <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : "Save machine"}</Button>
           </DialogFooter>

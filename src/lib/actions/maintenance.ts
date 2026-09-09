@@ -22,6 +22,10 @@ const machineSchema = z.object({
   location: z.string().optional().nullable(),
   departmentId: z.string().optional().nullable(),
   purchaseCost: z.coerce.number().min(0).optional().nullable(),
+  // Create never sends this (no status field in the create dialog) --
+  // the default keeps creation behavior unchanged (still RUNNING). Edit
+  // always sends the machine's actual current status explicitly.
+  status: z.enum(["RUNNING", "IDLE", "UNDER_MAINTENANCE", "BREAKDOWN", "RETIRED"]).default("RUNNING"),
 });
 export type MachineInput = z.infer<typeof machineSchema>;
 
@@ -34,6 +38,21 @@ export async function createMachineAction(input: MachineInput): Promise<ActionRe
   await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Machine", entityId: machine.id, newValue: machine });
   revalidatePath("/machinery");
   return { success: true, id: machine.id };
+}
+
+export async function updateMachineAction(id: string, input: MachineInput): Promise<ActionResult> {
+  const session = await requireSession();
+  requirePermission(session, MACHINERY_PERMISSIONS);
+  const parsed = machineSchema.safeParse(input);
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  const existing = await prisma.machine.findFirst({ where: { id, companyId: session.companyId } });
+  if (!existing) return { success: false, error: "Machine not found" };
+
+  const machine = await prisma.machine.update({ where: { id }, data: parsed.data });
+  await audit({ companyId: session.companyId, userId: session.sub, action: "UPDATE", entityType: "Machine", entityId: id, oldValue: existing, newValue: machine });
+  revalidatePath("/machinery");
+  return { success: true, id };
 }
 
 const maintenanceSchema = z.object({

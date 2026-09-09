@@ -47,6 +47,7 @@ export default async function MachineryPage() {
               <TableHead className="text-right">Purchase Price</TableHead>
               <TableHead className="text-right">Maintenance Cost (all time)</TableHead>
               <TableHead>Status</TableHead>
+              {canManage && <TableHead />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -58,6 +59,25 @@ export default async function MachineryPage() {
                 <TableCell className="text-right tabular-nums">{m.purchaseCost ? formatINR(Number(m.purchaseCost)) : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(costMap.get(m.id) ?? 0)}</TableCell>
                 <TableCell><Badge variant={STATUS_VARIANT[m.status]}>{m.status.replace("_", " ")}</Badge></TableCell>
+                {canManage && (
+                  <TableCell>
+                    <MachineFormDialog
+                      machineId={m.id}
+                      departments={departments}
+                      trigger="icon"
+                      defaultValues={{
+                        machineCode: m.machineCode,
+                        name: m.name,
+                        manufacturer: m.manufacturer ?? undefined,
+                        model: m.model ?? undefined,
+                        location: m.location ?? undefined,
+                        departmentId: m.departmentId ?? undefined,
+                        purchaseCost: m.purchaseCost ? Number(m.purchaseCost) : undefined,
+                        status: m.status,
+                      }}
+                    />
+                  </TableCell>
+                )}
               </TableRow>
             ))}
             {machines.length === 0 && (
