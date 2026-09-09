@@ -13,7 +13,6 @@ import type { ActionResult } from "@/lib/actions/expenses";
 
 const MAINT_PERMISSIONS = ["maintenance.manage"];
 const MACHINERY_PERMISSIONS = ["machinery.manage"];
-const CONSUMABLE_PERMISSIONS = ["consumables.manage"];
 
 const machineSchema = z.object({
   machineCode: z.string().min(1),
@@ -35,32 +34,6 @@ export async function createMachineAction(input: MachineInput): Promise<ActionRe
   await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Machine", entityId: machine.id, newValue: machine });
   revalidatePath("/machinery");
   return { success: true, id: machine.id };
-}
-
-const consumableSchema = z.object({
-  partNumber: z.string().min(1),
-  name: z.string().min(1),
-  category: z.string().optional().nullable(),
-  unit: z.string().default("pcs"),
-  unitCost: z.coerce.number().min(0),
-  currentStock: z.coerce.number().min(0).default(0),
-  minimumStock: z.coerce.number().min(0).default(0),
-  maximumStock: z.coerce.number().min(0).optional().nullable(),
-  storageLocation: z.string().optional().nullable(),
-});
-export type ConsumableInput = z.infer<typeof consumableSchema>;
-
-// Renamed from createSparePartAction — consumables have no default-supplier
-// field any more, supplier is only ever recorded per purchase order.
-export async function createConsumableAction(input: ConsumableInput): Promise<ActionResult> {
-  const session = await requireSession();
-  requirePermission(session, [...CONSUMABLE_PERMISSIONS, ...MAINT_PERMISSIONS]);
-  const parsed = consumableSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const consumable = await prisma.consumable.create({ data: { ...parsed.data, companyId: session.companyId } });
-  await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Consumable", entityId: consumable.id, newValue: consumable });
-  revalidatePath("/spare-parts");
-  return { success: true, id: consumable.id };
 }
 
 const maintenanceSchema = z.object({
@@ -199,45 +172,3 @@ export async function createMaintenanceRecordAction(input: MaintenanceInput): Pr
   return { success: true, id: record.id };
 }
 
-const adjustmentSchema = z.object({
-  consumableId: z.string().min(1),
-  type: z.enum(["PURCHASE", "RETURN", "ADJUSTMENT", "DAMAGED", "SCRAP"]),
-  quantity: z.coerce.number().positive(),
-  notes: z.string().optional().nullable(),
-});
-export type InventoryAdjustmentInput = z.infer<typeof adjustmentSchema>;
-
-export async function adjustInventoryAction(input: InventoryAdjustmentInput): Promise<ActionResult> {
-  const session = await requireSession();
-  requirePermission(session, [...CONSUMABLE_PERMISSIONS, ...MAINT_PERMISSIONS]);
-  const parsed = adjustmentSchema.safeParse(input);
-  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  const data = parsed.data;
-
-  const consumable = await prisma.consumable.findUnique({ where: { id: data.consumableId } });
-  if (!consumable) return { success: false, error: "Spare part not found" };
-
-  const isDecrease = data.type === "DAMAGED" || data.type === "SCRAP";
-  const delta = isDecrease ? -data.quantity : data.quantity;
-  if (isDecrease && Number(consumable.currentStock) < data.quantity) {
-    return { success: false, error: `Cannot remove more than available stock (${consumable.currentStock})` };
-  }
-
-  await prisma.$transaction([
-    prisma.consumable.update({ where: { id: data.consumableId }, data: { currentStock: { increment: delta } } }),
-    prisma.consumableStockMovement.create({
-      data: {
-        consumableId: data.consumableId,
-        movementType: data.type,
-        quantity: delta,
-        notes: data.notes || null,
-        performedById: session.sub,
-      },
-    }),
-  ]);
-
-  await audit({ companyId: session.companyId, userId: session.sub, action: `INVENTORY_${data.type}`, entityType: "Consumable", entityId: data.consumableId, newValue: { quantity: delta } });
-  await checkLowStock(session.companyId, data.consumableId);
-  revalidatePath("/spare-parts");
-  return { success: true };
-}

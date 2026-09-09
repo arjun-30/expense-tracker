@@ -107,18 +107,6 @@ export async function getMaintenanceReportRows(companyId: string, f: ReportFilte
   }));
 }
 
-export async function getSpareReportRows(companyId: string) {
-  const consumables = await prisma.consumable.findMany({ where: { companyId }, orderBy: { name: "asc" } });
-  return consumables.map((s) => ({
-    partNumber: s.partNumber,
-    name: s.name,
-    currentStock: Number(s.currentStock),
-    minimumStock: Number(s.minimumStock),
-    unitPrice: Number(s.unitCost),
-    status: Number(s.currentStock) < Number(s.minimumStock) ? "Low Stock" : "OK",
-  }));
-}
-
 export async function getBudgetReportRows(companyId: string) {
   const { getBudgetsWithActuals } = await import("@/lib/services/budgets");
   const rows = await getBudgetsWithActuals(companyId);

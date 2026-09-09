@@ -6,7 +6,6 @@ import {
   Route,
   Cog,
   Wrench,
-  PackageSearch,
   ShoppingCart,
   Building2,
   Wallet,
@@ -62,7 +61,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "machinery", label: "Machinery", href: "/machinery", icon: Cog },
       { key: "maintenance", label: "Maintenance", href: "/maintenance", icon: Wrench },
-      { key: "spareParts", label: "Spare Parts", href: "/spare-parts", icon: PackageSearch },
     ],
   },
   {

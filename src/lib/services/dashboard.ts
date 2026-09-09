@@ -51,7 +51,6 @@ export async function getKpis(session: SessionPayload) {
     fuelAgg,
     maintenanceAgg,
     transportAgg,
-    consumablesAgg,
     budgets,
   ] = await Promise.all([
     prisma.expense.aggregate({ where: { companyId, status: { in: FINALIZED } }, _sum: { totalAmount: true } }),
@@ -86,10 +85,6 @@ export async function getKpis(session: SessionPayload) {
       where: { companyId, date: { gte: thisMonthStart, lt: thisMonthEnd } },
       _sum: { totalCost: true },
     }),
-    prisma.consumableStockMovement.aggregate({
-      where: { movementType: "PURCHASE", consumable: { companyId }, movementDate: { gte: thisMonthStart, lt: thisMonthEnd } },
-      _sum: { totalCost: true },
-    }),
     prisma.budget.findMany({
       where: { companyId, periodStart: { lte: thisMonthEnd }, periodEnd: { gte: thisMonthStart } },
       include: { allocations: true },
@@ -118,7 +113,6 @@ export async function getKpis(session: SessionPayload) {
     fuelExpensesThisMonth: toNumber(fuelAgg._sum?.totalAmount),
     maintenanceExpensesThisMonth: toNumber(maintenanceAgg._sum?.totalCost),
     transportExpensesThisMonth: toNumber(transportAgg._sum?.totalCost),
-    sparePartsExpensesThisMonth: toNumber(consumablesAgg._sum?.totalCost),
     budgetUtilizationPct: budgetUtilizationRatio(budgetTotal, budgetActual),
     budgetTotal,
     budgetActual,

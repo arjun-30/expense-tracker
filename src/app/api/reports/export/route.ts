@@ -8,7 +8,6 @@ import {
   getFuelReportRows,
   getTransportationReportRows,
   getMaintenanceReportRows,
-  getSpareReportRows,
   getBudgetReportRows,
 } from "@/lib/services/reports";
 
@@ -34,10 +33,6 @@ const REPORT_COLUMNS: Record<string, ExportColumn[]> = {
     { key: "type", header: "Type" }, { key: "labourCost", header: "Labour" }, { key: "consumablesCost", header: "Spares" },
     { key: "otherCost", header: "Other" }, { key: "totalCost", header: "Total" }, { key: "downtimeMinutes", header: "Downtime (min)" },
   ],
-  spares: [
-    { key: "partNumber", header: "Part #" }, { key: "name", header: "Name" },
-    { key: "currentStock", header: "Stock" }, { key: "minimumStock", header: "Min Stock" }, { key: "unitPrice", header: "Unit Price" }, { key: "status", header: "Status" },
-  ],
   budgets: [
     { key: "name", header: "Budget" }, { key: "scope", header: "Scope" }, { key: "period", header: "Period" },
     { key: "periodStart", header: "Start" }, { key: "periodEnd", header: "End" }, { key: "budget", header: "Budget" },
@@ -55,7 +50,6 @@ async function fetchRows(
     case "fuel": return getFuelReportRows(session.companyId, filters);
     case "transportation": return getTransportationReportRows(session.companyId, filters);
     case "maintenance": return getMaintenanceReportRows(session.companyId, filters);
-    case "spares": return getSpareReportRows(session.companyId);
     case "budgets": return getBudgetReportRows(session.companyId);
     default: return null;
   }

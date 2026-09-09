@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Receipt, Fuel, Route, Wrench, PackageSearch, PiggyBank, ArrowRight } from "lucide-react";
+import { Receipt, Fuel, Route, Wrench, PiggyBank, ArrowRight } from "lucide-react";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
@@ -10,7 +10,6 @@ const REPORTS = [
   { href: "/reports/fuel", title: "Fuel Reports", description: "Vehicle-wise fuel, consumption and efficiency", icon: Fuel },
   { href: "/reports/transportation", title: "Transportation Reports", description: "Trip-wise, vehicle-wise, cost/kg", icon: Route },
   { href: "/reports/maintenance", title: "Machinery Reports", description: "Maintenance cost, downtime, breakdown history", icon: Wrench },
-  { href: "/reports/spares", title: "Spare Reports", description: "Stock, consumption and low-stock", icon: PackageSearch },
   { href: "/reports/budgets", title: "Budget Reports", description: "Budget vs actual, variance", icon: PiggyBank },
 ];
 

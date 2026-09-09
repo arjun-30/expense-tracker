@@ -6,7 +6,6 @@ import {
   Fuel,
   Wrench,
   Route,
-  PackageSearch,
   PiggyBank,
   Gauge,
   AlertTriangle,
@@ -91,7 +90,6 @@ export async function CompanyDashboard({ session }: { session: SessionPayload })
         <KpiCard label="Fuel (this month)" value={kpis.fuelExpensesThisMonth} icon={Fuel} subtext="Across all vehicles" />
         <KpiCard label="Maintenance (this month)" value={kpis.maintenanceExpensesThisMonth} icon={Wrench} subtext="Labour + spares + other" />
         <KpiCard label="Transportation (this month)" value={kpis.transportExpensesThisMonth} icon={Route} subtext="Freight, loading, toll etc." />
-        <KpiCard label="Spare Parts (this month)" value={kpis.sparePartsExpensesThisMonth} icon={PackageSearch} subtext="Purchased inventory value" />
         <KpiCard
           label="Fuel Cost / km"
           value={efficiency.fuelCostPerKm ?? 0}
