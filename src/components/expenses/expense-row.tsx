@@ -51,8 +51,8 @@ export function ExpenseRow({
         "cursor-pointer",
         // Persistent, accessible "needs approval" highlight — a static
         // red-tinted background/full-perimeter border always applies;
-        // approval-pending-highlight (globals.css) adds a gentle glow
-        // pulse on top, but only for prefers-reduced-motion: no-preference.
+        // approval-pending-highlight (globals.css) adds a subtle border
+        // color pulse on top, but only for prefers-reduced-motion: no-preference.
         // Derived live from status, so it vanishes the moment this expense
         // is approved or rejected.
         //

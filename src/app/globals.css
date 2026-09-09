@@ -101,58 +101,48 @@
   --status-critical: #dc2626;
   --delta-good: #059669;
   --radius: 0.5rem;
-  /* Pewter Grey sidebar theme, light-on-dark: blue stays reserved for
-   * sidebar-primary (logo badge, active-item accent bar/icon) below, which
-   * is intentionally identical to --primary and untouched by this change.
+  /* Near-black sidebar theme (superseded Pewter Grey), light-on-dark: blue
+   * stays reserved for sidebar-primary (logo badge, active-item accent
+   * bar/icon) below, which is intentionally identical to --primary and
+   * untouched by this change — same hue/chroma family (260.7 / 0.008) as
+   * every prior sidebar iteration, only lightness dropped to near-black
+   * (oklch L 0.5 -> 0.16) for a clean, professional near-black rather than
+   * pure #000000 (a true black reads harsher and clips even further into
+   * a range with no room left to darken further for hover, see below).
    *
-   * --sidebar was darkened from the prior iteration (oklch L 0.656 -> 0.5,
-   * same hue/chroma family) specifically to make light nav text pass WCAG
-   * AA: WCAG's contrast formula is not symmetric around a background's
-   * perceptual midpoint — for this hue, the crossover point where light and
-   * dark text reach equal max contrast sits at relative luminance ~0.179,
-   * and the prior pewter (~0.282) sat above it, meaning dark text (5.60:1)
-   * actually had *more* headroom than white text (capped at 3.16:1, an AA
-   * failure) against it. The new, darker pewter's relative luminance
-   * (~0.125) sits well below that crossover, so white nav text now reaches
-   * 6.01:1. This also improves separation from the white main content area
-   * (3.16:1 -> 6.01:1) as a side effect.
+   * At this relative luminance (~0.004), every text/border relationship
+   * inherited from pewter is already far past AA into AAA territory, so
+   * none of those token values needed to change, only re-verified:
+   * white text 19.41:1 (was 6.01:1), --sidebar-foreground 18.58:1 (was
+   * 5.74:1), --sidebar-heading 15.32:1 (was 4.73:1), --sidebar-border
+   * 15.05:1 (was 4.65:1), separation from the white main content area
+   * 19.41:1 (was 6.00:1) — all comfortably clear AAA (7:1) with large
+   * margin.
    *
-   * --sidebar-foreground: near-white (reuses the app's existing
-   * --primary-foreground/--sidebar-primary-foreground value) for normal
-   * nav text/icons, 5.77:1 against the new pewter; hover state (see
-   * app-sidebar.tsx) goes to pure white, 6.01:1, for a genuinely brighter
-   * step. --sidebar-heading is new (section labels: EXPENSES, FLEET, etc.)
-   * — softer than nav text but still clears AA on its own (4.73:1) at the
-   * small size those labels render at.
+   * --sidebar-hover flips direction from pewter's "darker than sidebar"
+   * decision — not by pattern-matching, but because darkening no longer
+   * works at all this close to true black: candidates from L 0.05-0.12
+   * (below the new --sidebar's 0.16) only ever reach 1.05-1.08:1
+   * distinction from --sidebar, since there's almost no lightness range
+   * left below it. Lightening instead has the whole rest of the scale
+   * available: L 0.32 reaches 1.53:1 distinction (matching pewter's own
+   * hover-distinction target exactly) while white text on it still holds
+   * 12.68:1 — both axes win decisively, confirming the "always darken"
+   * pattern from pewter was specific to pewter's position relative to
+   * this hue's light/dark contrast crossover, not a general rule.
    *
-   * --sidebar-accent is now white (active item's background, was grey) —
-   * --sidebar-accent-foreground stays exactly the same dark charcoal value
-   * used by the *previous* iteration's whole sidebar, now scoped to just
-   * the active item, 17.72:1 against the new white background.
-   *
-   * Known tradeoff, reported rather than silently accepted: the logo badge
-   * (bg-sidebar-primary, blue) sits directly on --sidebar and now has only
-   * 1.00:1 luminance contrast against it (was 1.89:1) — the darkening that
-   * fixes nav-text accessibility happens to land pewter very close to
-   * blue's own luminance. Not a WCAG failure (the badge is decorative, not
-   * an interactive/text UI component; its own icon-on-blue contrast is
-   * unaffected), but visually the badge now relies on hue difference alone
-   * to read against the sidebar — flagged for awareness. */
-  --sidebar: oklch(0.5 0.008 260.7);
+   * Known pewter-era tradeoff, now resolved: the logo badge (bg-sidebar-
+   * primary, blue, unchanged) sits directly on --sidebar and previously
+   * nearly disappeared (1.00:1 luminance contrast against pewter, a
+   * luminance coincidence). Against the new near-black it reaches 3.25:1
+   * — clears WCAG 1.4.11's 3:1 non-text-contrast threshold for graphical
+   * UI objects with real margin. No badge-specific fix (ring/border) is
+   * needed; flagged here for the record since the prior near-miss was
+   * flagged the same way. */
+  --sidebar: oklch(0.16 0.008 260.7);
   --sidebar-foreground: oklch(0.985 0.01 255);
   --sidebar-heading: oklch(0.92 0.006 265);
-  /* Hover/focus background for inactive nav items — deliberately DARKER
-   * than --sidebar, not lighter. Lightening was tried first (the more
-   * common hover convention) but this pewter's WCAG relative luminance
-   * (~0.125) already sits below the light/dark contrast crossover point
-   * for this hue (~0.179, see --sidebar's own comment above), so any
-   * lighter hover shade quickly erodes headroom for white text: the
-   * lightest usable step (oklch L 0.57) only clears white-text AA by a
-   * hair (4.48:1) while barely differing from --sidebar (1.34:1
-   * distinction). Darkening instead gives both a clearer background step
-   * (1.53:1 distinction, vs 1.34:1 lightening) and much stronger text
-   * contrast (9.19:1, vs 4.48:1) — strictly better on every axis. */
-  --sidebar-hover: oklch(0.4 0.008 260.7);
+  --sidebar-hover: oklch(0.32 0.008 260.7);
   --sidebar-primary: oklch(0.51 0.19 262.1);
   --sidebar-primary-foreground: oklch(0.985 0.01 255);
   --sidebar-accent: oklch(1 0 0);
@@ -218,10 +208,11 @@
 /* Persistent highlight for rows needing urgent attention (e.g. an
  * APPROVAL_PENDING expense on the list page) — a static red-tinted
  * background/border always applies (see the .approval-pending-highlight
- * class's own Tailwind utilities where it's used), and this adds a gentle
- * glow pulse on top, gated behind prefers-reduced-motion so users who've
- * asked for reduced motion still get the static highlight, just without
- * the animation. Deliberately not a rapid on/off blink (WCAG 2.2.2).
+ * class's own Tailwind utilities where it's used), and this adds a subtle
+ * border color pulse on top, gated behind prefers-reduced-motion so users
+ * who've asked for reduced motion still get the static highlight, just
+ * without the animation. Deliberately not a rapid on/off blink (WCAG
+ * 2.2.2) — a smooth, gradual color shift instead.
  *
  * The full-perimeter border itself is also a box-shadow (see the
  * shadow-[inset_...] utility where this class is used) rather than a real
@@ -229,23 +220,21 @@
  * from Tailwind's preflight, under which a <tr>'s own border is unreliable
  * across browsers (collapsed-border resolution operates on cell borders,
  * not row borders). box-shadow isn't part of the table border model at
- * all, so it renders correctly regardless. Each keyframe below layers that
- * same inset border shadow as a first, constant value alongside the
- * animated glow — an animated box-shadow REPLACES the element's box-shadow
- * for the property's whole value each frame, it doesn't compose with a
- * separately-applied static box-shadow class, so the border has to live
- * inside these keyframes too or it would vanish for the animation's
- * duration on every cycle. */
+ * all, so it renders correctly regardless. Each keyframe animates that
+ * same inset border's own color, alternating between the normal
+ * --approval-pending-accent and a brighter (whiter-mixed, always in-gamut)
+ * variant of it at the 50% peak — an animated box-shadow REPLACES the
+ * element's box-shadow for the property's whole value each frame, it
+ * doesn't compose with a separately-applied static box-shadow class, so
+ * the border has to live inside these keyframes too, at a non-zero/
+ * non-transparent value in every step, or it would vanish for the
+ * animation's duration on every cycle. */
 @keyframes approval-pending-pulse {
   0%, 100% {
-    box-shadow:
-      inset 0 0 0 2px var(--approval-pending-accent),
-      0 0 0 0 color-mix(in oklch, var(--destructive) 30%, transparent);
+    box-shadow: inset 0 0 0 2px var(--approval-pending-accent);
   }
   50% {
-    box-shadow:
-      inset 0 0 0 2px var(--approval-pending-accent),
-      0 0 8px 2px color-mix(in oklch, var(--destructive) 0%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--approval-pending-accent), white 35%);
   }
 }
 
