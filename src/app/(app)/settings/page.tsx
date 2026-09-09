@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
+import { hasPermission } from "@/lib/auth/permissions";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,12 @@ export default async function SettingsPage() {
   const { session, allowed } = await guardModule("settings");
   if (!allowed) return <AccessRestricted />;
 
+  // MODULE_ACCESS.settings already restricts this page to SUPER_ADMIN
+  // (the only role with settings.manage today); this check stays as
+  // defense-in-depth, matching how other pages in this app double-check
+  // fine-grained permissions rather than relying on the module gate alone.
+  if (!hasPermission(session, "settings.manage")) return <AccessRestricted />;
+
   const [departments, costCenters, categories, notificationRules] = await Promise.all([
     prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
     prisma.costCenter.findMany({ where: { companyId: session.companyId }, include: { department: true }, orderBy: { name: "asc" } }),
@@ -21,7 +28,7 @@ export default async function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Categories, departments, cost centers and notification rules" />
+      <PageHeader title="Organization Settings" description="Departments, cost centers, categories and notification rules" />
 
       <Tabs defaultValue="departments">
         <TabsList>

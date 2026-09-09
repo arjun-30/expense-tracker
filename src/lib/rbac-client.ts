@@ -37,7 +37,13 @@ export const MODULE_ACCESS: Record<string, RoleName[]> = {
   auditLogs: [ROLES.SUPER_ADMIN],
   usersRoles: [ROLES.SUPER_ADMIN],
   roles: [ROLES.SUPER_ADMIN],
+  // Organization Settings (Departments/Cost Centers/Categories/
+  // Notification Rules) is gated to settings.manage-holding roles --
+  // SUPER_ADMIN only today, matching Roles/Users & Roles above. Profile
+  // is now its own separate destination (see "profile" below) and stays
+  // open to everyone, independent of this.
   settings: [ROLES.SUPER_ADMIN],
+  profile: ALL_ROLES,
 };
 
 /** True if any role in `roles` (the roles a user holds) grants access to `moduleKey`. */

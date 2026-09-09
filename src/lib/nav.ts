@@ -11,8 +11,8 @@ import {
   Wallet,
   PiggyBank,
   BarChart3,
-  Bell,
   ScrollText,
+  User,
   Users,
   ShieldCheck,
   Settings,
@@ -38,7 +38,6 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     items: [
       { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { key: "notifications", label: "Notifications", href: "/notifications", icon: Bell },
     ],
   },
   {
@@ -81,16 +80,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Administration",
     items: [
-      {
-        key: "settings",
-        label: "Settings",
-        href: "/settings",
-        icon: Settings,
-        children: [
-          { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
-          { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
-        ],
-      },
+      { key: "profile", label: "Profile", href: "/profile", icon: User },
+      { key: "settings", label: "Organization Settings", href: "/settings", icon: Settings },
+      { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
+      { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
     ],
   },
 ];
