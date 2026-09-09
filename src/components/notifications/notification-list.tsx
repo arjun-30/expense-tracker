@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { markNotificationReadAction, markAllNotificationsReadAction } from "@/lib/actions/notifications";
 import { formatDate } from "@/lib/format";
 
-interface NotificationRow {
+export interface NotificationRow {
   id: string;
   title: string;
   message: string;
@@ -17,7 +17,7 @@ interface NotificationRow {
   createdAt: string;
 }
 
-const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
+export const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   INFO: "default",
   WARNING: "secondary",
   CRITICAL: "destructive",
