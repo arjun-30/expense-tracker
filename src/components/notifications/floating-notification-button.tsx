@@ -31,7 +31,7 @@ export function FloatingNotificationButton({
     <div className="fixed right-6 bottom-6 z-50">
       <Popover>
         <PopoverTrigger asChild>
-          <Button size="icon" className="relative h-12 w-12 rounded-full shadow-lg">
+          <Button size="icon" className="relative h-12 w-12 rounded-full bg-sidebar-hover text-white shadow-lg hover:bg-sidebar-hover/90">
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
               <Badge className="absolute -top-1 -right-1 h-4 min-w-4 justify-center px-1 text-[10px]" variant="destructive">

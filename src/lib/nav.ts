@@ -80,10 +80,18 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Administration",
     items: [
-      { key: "profile", label: "Profile", href: "/profile", icon: User },
-      { key: "settings", label: "Organization Settings", href: "/settings", icon: Settings },
-      { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
-      { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
+      {
+        key: "settings",
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+        children: [
+          { key: "profile", label: "Profile", href: "/profile", icon: User },
+          { key: "settings", label: "Organization Settings", href: "/settings", icon: Settings },
+          { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
+          { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
+        ],
+      },
     ],
   },
 ];

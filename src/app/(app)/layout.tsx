@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen w-full overflow-hidden">
       <AppSidebar roles={session.roles} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 overflow-y-auto bg-muted/30 p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-muted/30 px-6 pt-2 pb-6">{children}</main>
       </div>
       <FloatingNotificationButton
         unreadCount={unreadCount}
