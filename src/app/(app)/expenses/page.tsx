@@ -6,30 +6,17 @@ import { isAdminRole, expenseVisibilityWhere } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ExpenseRow } from "@/components/expenses/expense-row";
+import { ExpenseFilters } from "@/components/expenses/expense-filters";
 import { DataTablePagination } from "@/components/data-table-pagination";
-import { EXPENSE_STATUS_LABELS, VALID_EXPENSE_STATUSES } from "@/lib/status-labels";
+import { VALID_EXPENSE_STATUSES } from "@/lib/status-labels";
 import type { ExpenseStatus } from "@/generated/prisma/enums";
 import { hasRole } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
 import { parseFilterParam } from "@/lib/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const PAGE_SIZE = 20;
-// APPROVED is a legacy status with no active workflow (no transition ever
-// assigns or leaves it in the current TRANSITIONS state machine — it only
-// ever appears on historical records predating the invoice-based workflow
-// replacement). Excluded from the filter dropdown only; EXPENSE_STATUS_LABELS
-// itself stays complete so any such record still renders a correct badge.
-const FILTERABLE_STATUS_ENTRIES = Object.entries(EXPENSE_STATUS_LABELS).filter(([value]) => value !== "APPROVED");
 
 export default async function ExpensesPage({
   searchParams,
@@ -105,30 +92,13 @@ export default async function ExpensesPage({
         }
       />
 
-      <form className="mb-4 flex flex-wrap items-center gap-2" method="get">
-        <Input name="q" placeholder="Search expense #, description…" defaultValue={q} className="w-64" />
-        <Select name="status" defaultValue={status ?? "all"}>
-          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {FILTERABLE_STATUS_ENTRIES.map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {admin && (
-          <Select name="department" defaultValue={departmentId ?? "all"}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="Department" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All departments</SelectItem>
-              {departments.map((d) => (
-                <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Button type="submit" variant="secondary">Filter</Button>
-      </form>
+      <ExpenseFilters
+        admin={admin}
+        departments={departments}
+        initialQuery={q ?? ""}
+        initialStatus={status ?? "all"}
+        initialDepartment={departmentId ?? "all"}
+      />
 
       <div className="rounded-lg border bg-card">
         <Table>
