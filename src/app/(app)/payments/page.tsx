@@ -45,6 +45,7 @@ export default async function PaymentsPage() {
               <TableHead>Expense</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Method</TableHead>
+              <TableHead>Reference #</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -57,12 +58,13 @@ export default async function PaymentsPage() {
                 <TableCell>{p.expense?.expenseNumber ?? "—"}</TableCell>
                 <TableCell>{formatDate(p.paymentDate)}</TableCell>
                 <TableCell>{p.method.replace("_", " ")}</TableCell>
+                <TableCell>{p.referenceNumber ?? "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(Number(p.amount))}</TableCell>
                 <TableCell><Badge variant={p.status === "PAID" ? "default" : "secondary"}>{p.status.replace("_", " ")}</Badge></TableCell>
               </TableRow>
             ))}
             {payments.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">No payments recorded yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">No payments recorded yet.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
