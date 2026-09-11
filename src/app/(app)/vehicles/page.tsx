@@ -72,7 +72,7 @@ export default async function VehiclesPage() {
                       <ExpiryBadge label="Fit" date={fitness} />
                     </div>
                   </TableCell>
-                  <TableCell><Badge variant={v.status === "ACTIVE" ? "default" : "outline"}>{v.status.replace("_", " ")}</Badge></TableCell>
+                  <TableCell><Badge variant={v.status === "ACTIVE" ? "success" : "outline"}>{v.status.replace("_", " ")}</Badge></TableCell>
                 </TableRow>
               );
             })}

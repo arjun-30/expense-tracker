@@ -9,8 +9,8 @@ import { formatINR } from "@/lib/format";
 import { hasRole } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  RUNNING: "default",
+const STATUS_VARIANT: Record<string, "success" | "secondary" | "destructive" | "outline"> = {
+  RUNNING: "success",
   IDLE: "secondary",
   UNDER_MAINTENANCE: "secondary",
   BREAKDOWN: "destructive",

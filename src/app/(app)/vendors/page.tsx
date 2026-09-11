@@ -49,7 +49,7 @@ export default async function VendorsPage() {
                 <TableCell className="text-right tabular-nums">{formatINR(v.outstanding)}</TableCell>
                 <TableCell className="text-right tabular-nums">{v.purchaseOrderCount}</TableCell>
                 <TableCell>
-                  <Badge variant={v.isActive ? "default" : "outline"}>{v.isActive ? "ACTIVE" : "INACTIVE"}</Badge>
+                  <Badge variant={v.isActive ? "success" : "outline"}>{v.isActive ? "ACTIVE" : "INACTIVE"}</Badge>
                 </TableCell>
                 {canEdit && (
                   <TableCell>

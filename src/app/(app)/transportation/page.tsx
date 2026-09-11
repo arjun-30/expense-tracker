@@ -59,7 +59,7 @@ export default async function TransportationPage() {
                 <TableCell>{t.material ?? "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{t.quantity ? `${Number(t.quantity)} ${t.unit ?? ""}` : "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(Number(t.totalCost))}</TableCell>
-                <TableCell><Badge variant={t.paymentStatus === "PAID" ? "default" : "secondary"}>{t.paymentStatus.replace("_", " ")}</Badge></TableCell>
+                <TableCell><Badge variant={t.paymentStatus === "PAID" ? "success" : "secondary"}>{t.paymentStatus.replace("_", " ")}</Badge></TableCell>
               </TableRow>
             ))}
             {trips.length === 0 && (

@@ -65,7 +65,7 @@ export default async function PurchasesPage() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatINR(Number(po.totalAmount))}</TableCell>
                   <TableCell>{po.expectedDelivery ? formatDate(po.expectedDelivery) : "—"}</TableCell>
-                  <TableCell><Badge variant={po.status === "RECEIVED" ? "default" : "secondary"}>{po.status.replace("_", " ")}</Badge></TableCell>
+                  <TableCell><Badge variant={po.status === "RECEIVED" ? "success" : "secondary"}>{po.status.replace("_", " ")}</Badge></TableCell>
                   {canManagePO && (
                     <TableCell>
                       {po.status === "ORDERED" || po.status === "PARTIALLY_RECEIVED" ? (

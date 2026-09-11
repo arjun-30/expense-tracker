@@ -60,7 +60,7 @@ export default async function PaymentsPage() {
                 <TableCell>{p.method.replace("_", " ")}</TableCell>
                 <TableCell>{p.referenceNumber ?? "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatINR(Number(p.amount))}</TableCell>
-                <TableCell><Badge variant={p.status === "PAID" ? "default" : "secondary"}>{p.status.replace("_", " ")}</Badge></TableCell>
+                <TableCell><Badge variant={p.status === "PAID" ? "success" : "secondary"}>{p.status.replace("_", " ")}</Badge></TableCell>
               </TableRow>
             ))}
             {payments.length === 0 && (
