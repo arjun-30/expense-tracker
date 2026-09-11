@@ -2,14 +2,14 @@ import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { FuelFormDialog } from "@/components/fleet/fuel-form-dialog";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { formatDate, formatINR } from "@/lib/format";
 import { hasRole } from "@/lib/auth/permissions";
 import { ROLES } from "@/lib/rbac-client";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, IndianRupee, Fuel, Gauge } from "lucide-react";
 
 export default async function FuelPage() {
   const { session, allowed } = await guardModule("fuel");
@@ -38,9 +38,19 @@ export default async function FuelPage() {
       />
 
       <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Fuel Cost</CardTitle></CardHeader><CardContent className="text-xl font-semibold">{formatINR(Number(agg._sum.totalAmount ?? 0))}</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Litres</CardTitle></CardHeader><CardContent className="text-xl font-semibold">{Number(agg._sum.litres ?? 0).toFixed(0)} L</CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Avg. Efficiency</CardTitle></CardHeader><CardContent className="text-xl font-semibold">{Number(agg._avg.efficiencyKmpl ?? 0).toFixed(2)} km/L</CardContent></Card>
+        <KpiCard label="Total Fuel Cost" value={Number(agg._sum.totalAmount ?? 0)} icon={IndianRupee} />
+        <KpiCard
+          label="Total Litres"
+          value={Number(agg._sum.litres ?? 0)}
+          formattedValue={`${Number(agg._sum.litres ?? 0).toFixed(0)} L`}
+          icon={Fuel}
+        />
+        <KpiCard
+          label="Avg. Efficiency"
+          value={Number(agg._avg.efficiencyKmpl ?? 0)}
+          formattedValue={`${Number(agg._avg.efficiencyKmpl ?? 0).toFixed(2)} km/L`}
+          icon={Gauge}
+        />
       </div>
 
       <div className="rounded-lg border bg-card">

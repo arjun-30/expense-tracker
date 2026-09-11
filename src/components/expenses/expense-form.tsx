@@ -191,7 +191,7 @@ export function ExpenseForm({ refData, defaultValues, expenseId }: { refData: Re
 
           <div className="space-y-2">
             <Label>Total</Label>
-            <p className="flex h-9 items-center text-lg font-semibold tabular-nums">{formatINR(total)}</p>
+            <p className="flex h-9 items-center font-heading text-lg font-semibold tabular-nums">{formatINR(total)}</p>
           </div>
 
           <div className="space-y-2">

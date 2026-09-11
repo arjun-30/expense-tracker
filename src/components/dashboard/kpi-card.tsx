@@ -13,6 +13,7 @@ export function KpiCard({
   formatAsCurrency = true,
   precise = false,
   subtext,
+  formattedValue,
 }: {
   label: string;
   value: number;
@@ -26,6 +27,8 @@ export function KpiCard({
   /** show currency with paise instead of rounding to whole rupees, for small per-unit values */
   precise?: boolean;
   subtext?: string;
+  /** pre-formatted display string (e.g. "1,234 L", "12.34 km/L") that overrides the default currency/number formatting */
+  formattedValue?: string;
 }) {
   const hasDelta = deltaPct !== undefined && deltaPct !== null && Number.isFinite(deltaPct);
   const isPositive = hasDelta && deltaPct! > 0;
@@ -41,7 +44,7 @@ export function KpiCard({
       </CardHeader>
       <CardContent>
         <div className="font-heading text-2xl font-semibold tabular-nums">
-          {formatAsCurrency ? formatINR(value, precise) : value.toLocaleString("en-IN")}
+          {formattedValue ?? (formatAsCurrency ? formatINR(value, precise) : value.toLocaleString("en-IN"))}
         </div>
         {hasDelta ? (
           <p className={cn("mt-1 flex items-center gap-1 text-xs font-medium", isGood ? "text-status-good" : "text-status-critical")}>
