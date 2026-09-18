@@ -23,25 +23,29 @@ export const ALL_ROLES: RoleName[] = Object.values(ROLES);
 export const MODULE_ACCESS: Record<string, RoleName[]> = {
   dashboard: ALL_ROLES,
   expenses: ALL_ROLES,
+  approvals: ALL_ROLES,
   fuel: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER, ROLES.ACCOUNTS],
   vehicles: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER],
   transportation: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER, ROLES.ACCOUNTS],
   machinery: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER],
   maintenance: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER],
+  consumables: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER, ROLES.PURCHASE_MANAGER],
+  purchaseRequests: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER, ROLES.ACCOUNTS, ROLES.EMPLOYEE],
+  purchaseOrders: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER, ROLES.ACCOUNTS],
   purchases: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER, ROLES.ACCOUNTS],
   vendors: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER, ROLES.ACCOUNTS],
   payments: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
   budgets: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
   reports: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
+  expenseReports: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
+  costAnalysis: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
+  operationalReports: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS],
   notifications: ALL_ROLES,
   auditLogs: [ROLES.SUPER_ADMIN],
   usersRoles: [ROLES.SUPER_ADMIN],
   roles: [ROLES.SUPER_ADMIN],
-  // Organization Settings (Departments/Cost Centers/Categories/
-  // Notification Rules) is gated to settings.manage-holding roles --
-  // SUPER_ADMIN only today, matching Roles/Users & Roles above. Profile
-  // is now its own separate destination (see "profile" below) and stays
-  // open to everyone, independent of this.
+  departments: [ROLES.SUPER_ADMIN],
+  costCenters: [ROLES.SUPER_ADMIN],
   settings: [ROLES.SUPER_ADMIN],
   profile: ALL_ROLES,
 };

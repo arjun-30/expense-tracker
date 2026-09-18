@@ -20,7 +20,7 @@ export function QuickAddDepartment() {
 
   return (
     <form
-      className="flex gap-2"
+      className="flex flex-wrap sm:flex-nowrap gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         startTransition(async () => {
@@ -30,9 +30,9 @@ export function QuickAddDepartment() {
         });
       }}
     >
-      <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
-      <Input placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} className="h-8 w-28" />
-      <Button type="submit" size="sm" disabled={pending}><Plus className="h-4 w-4" /></Button>
+      <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 flex-1 min-w-[120px]" />
+      <Input placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} className="h-8 w-full sm:w-28" />
+      <Button type="submit" size="sm" disabled={pending} className="shrink-0"><Plus className="h-4 w-4" /></Button>
     </form>
   );
 }

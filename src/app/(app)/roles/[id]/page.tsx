@@ -31,7 +31,7 @@ export default async function RoleDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <BackButton />
+      <BackButton fallbackHref="/settings?tab=roles" />
       <PageHeader
         title={role.name}
         description={role.description ?? undefined}

@@ -45,6 +45,7 @@ export async function createRoleAction(input: RoleInput): Promise<ActionResult> 
       },
     });
     await audit({ companyId: session.companyId, userId: session.sub, action: "CREATE", entityType: "Role", entityId: role.id, newValue: role });
+    revalidatePath("/settings");
     revalidatePath("/roles");
     return { success: true, id: role.id };
   } catch (err) {
@@ -74,6 +75,7 @@ export async function updateRoleAction(id: string, input: RoleInput): Promise<Ac
       data: { name: parsed.data.name, description: parsed.data.description || null },
     });
     await audit({ companyId: session.companyId, userId: session.sub, action: "UPDATE", entityType: "Role", entityId: id, oldValue: existing, newValue: role });
+    revalidatePath("/settings");
     revalidatePath("/roles");
     revalidatePath(`/roles/${id}`);
     return { success: true, id };
@@ -114,6 +116,7 @@ export async function updateRolePermissionsAction(id: string, permissionCodes: s
     newValue: { permissions: resolvedCodes },
   });
   revalidatePath(`/roles/${id}`);
+  revalidatePath("/settings");
   revalidatePath("/roles");
   return { success: true, id };
 }
@@ -146,6 +149,7 @@ export async function deleteRoleAction(id: string): Promise<ActionResult> {
   }
 
   await audit({ companyId: session.companyId, userId: session.sub, action: "DELETE", entityType: "Role", entityId: id, oldValue: { name: role.name } });
+  revalidatePath("/settings");
   revalidatePath("/roles");
   return { success: true };
 }

@@ -21,3 +21,12 @@ export const EXPENSE_STATUS_VARIANT: Record<ExpenseStatus, "default" | "secondar
   REJECTED: "destructive",
   PAID: "success",
 };
+
+export const EXPENSE_STATUS_DOT_COLOR: Record<ExpenseStatus, string> = {
+  SUBMITTED: "bg-amber-500",
+  APPROVAL_PENDING: "bg-destructive",
+  APPROVED: "bg-blue-500",
+  REVIEWED: "bg-sky-500",
+  REJECTED: "bg-rose-500",
+  PAID: "bg-emerald-500",
+};

@@ -14,12 +14,12 @@ export default async function DashboardPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { session } = await guardModule("dashboard");
+  const sp = await searchParams;
 
   if (canViewCompanyDashboard(session)) {
-    return <CompanyDashboard session={session} />;
+    return <CompanyDashboard session={session} tab={sp.tab} />;
   }
 
-  const sp = await searchParams;
   const rawStatus = parseFilterParam(sp.status);
   const statusFilter = rawStatus && VALID_EXPENSE_STATUSES.has(rawStatus) ? (rawStatus as ExpenseStatus) : undefined;
 

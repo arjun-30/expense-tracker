@@ -28,13 +28,13 @@ export default async function ProfilePage() {
             </div>
             <div className="flex justify-between border-b py-2 last:border-0">
               <span className="text-muted-foreground">Role</span>
-              <span className="font-medium">
+              <span className="font-medium text-foreground">
                 {session.roles[0] ? ROLE_LABELS[session.roles[0] as keyof typeof ROLE_LABELS] : "—"}
               </span>
             </div>
           </div>
           <form action={logoutAction}>
-            <Button type="submit" variant="outline">
+            <Button type="submit" variant="outline" className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive">
               <LogOut className="h-4 w-4" /> Log out
             </Button>
           </form>

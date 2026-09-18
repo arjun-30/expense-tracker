@@ -126,15 +126,61 @@ export async function getExpenseTrend(session: SessionPayload, months = 12) {
     SELECT date_trunc('month', "expense_date") AS month, SUM("total_amount")::float AS total
     FROM "expenses"
     WHERE "company_id" = ${companyId}
-      AND "status" = 'PAID'
+      AND "status" IN (${Prisma.join(FINALIZED)})
       AND "expense_date" >= (date_trunc('month', now()) - (${months - 1} || ' months')::interval)
     GROUP BY 1
     ORDER BY 1
   `;
-  return rows.map((r) => ({
-    month: new Date(r.month).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
-    total: Number(r.total),
-  }));
+  const byMonth = new Map<string, number>();
+  for (const r of rows) {
+    const d = new Date(r.month);
+    byMonth.set(`${d.getFullYear()}-${d.getMonth()}`, Number(r.total));
+  }
+
+  const now = new Date();
+  const out: { month: string; fullDate: string; total: number }[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      month: d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+      fullDate: d.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
+      total: byMonth.get(`${d.getFullYear()}-${d.getMonth()}`) ?? 0,
+    });
+  }
+  return out;
+}
+
+export async function getDailyExpenseTrend(session: SessionPayload, days = 30) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
+  const rows = await prisma.$queryRaw<{ day: Date; total: number }[]>`
+    SELECT date_trunc('day', "expense_date") AS day, SUM("total_amount")::float AS total
+    FROM "expenses"
+    WHERE "company_id" = ${companyId}
+      AND "status" IN (${Prisma.join(FINALIZED)})
+      AND "expense_date" >= (date_trunc('day', now()) - (${days - 1} || ' days')::interval)
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  const byDay = new Map<string, number>();
+  for (const r of rows) {
+    const d = new Date(r.day);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    byDay.set(key, Number(r.total));
+  }
+
+  const now = new Date();
+  const out: { date: string; fullDate: string; total: number }[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    out.push({
+      date: d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+      fullDate: d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
+      total: byDay.get(key) ?? 0,
+    });
+  }
+  return out;
 }
 
 export async function getExpenseByCategory(session: SessionPayload) {
@@ -188,36 +234,180 @@ export async function getTopVendors(session: SessionPayload, limit = 5) {
     .slice(0, limit);
 }
 
-export async function getMachineMaintenanceCost(session: SessionPayload, limit = 5) {
+export interface MachineCostItem {
+  id: string;
+  name: string;
+  code: string;
+  status: string;
+  value: number;
+  recordCount: number;
+}
+
+export async function getMachineMaintenanceCost(session: SessionPayload, limit = 5): Promise<MachineCostItem[]> {
   requireCompanyAnalyticsAccess(session);
   const companyId = session.companyId;
   const grouped = await prisma.maintenanceRecord.groupBy({
     by: ["machineId"],
     where: { machine: { companyId } },
     _sum: { totalCost: true },
+    _count: { id: true },
   });
   const machines = await prisma.machine.findMany({ where: { id: { in: grouped.map((g) => g.machineId) } } });
-  const names = new Map(machines.map((m) => [m.id, m.name]));
+  const machineMap = new Map(machines.map((m) => [m.id, m]));
   return grouped
-    .map((g) => ({ name: names.get(g.machineId) ?? "Unknown", value: toNumber(g._sum?.totalCost) }))
+    .map((g) => {
+      const m = machineMap.get(g.machineId);
+      return {
+        id: g.machineId,
+        name: m?.name ?? "Unknown",
+        code: m?.machineCode ?? "",
+        status: m?.status ?? "RUNNING",
+        value: toNumber(g._sum?.totalCost),
+        recordCount: g._count?.id ?? 0,
+      };
+    })
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
 }
 
-export async function getVehicleFuelCost(session: SessionPayload, limit = 5) {
+export interface VehicleFuelItem {
+  id: string;
+  name: string;
+  type: string;
+  model: string;
+  odometer: number | null;
+  value: number;
+  transactionCount: number;
+}
+
+export async function getVehicleFuelCost(session: SessionPayload, limit = 5): Promise<VehicleFuelItem[]> {
   requireCompanyAnalyticsAccess(session);
   const companyId = session.companyId;
   const grouped = await prisma.fuelTransaction.groupBy({
     by: ["vehicleId"],
     where: { vehicle: { companyId } },
     _sum: { totalAmount: true },
+    _count: { id: true },
   });
   const vehicles = await prisma.vehicle.findMany({ where: { id: { in: grouped.map((g) => g.vehicleId) } } });
-  const names = new Map(vehicles.map((v) => [v.id, v.registrationNumber]));
+  const vehicleMap = new Map(vehicles.map((v) => [v.id, v]));
   return grouped
-    .map((g) => ({ name: names.get(g.vehicleId) ?? "Unknown", value: toNumber(g._sum?.totalAmount) }))
+    .map((g) => {
+      const v = vehicleMap.get(g.vehicleId);
+      return {
+        id: g.vehicleId,
+        name: v?.registrationNumber ?? "Unknown",
+        type: v?.vehicleType ?? "Vehicle",
+        model: v ? `${v.manufacturer ?? ""} ${v.model ?? ""}`.trim() : "",
+        odometer: v?.currentOdometer !== null && v?.currentOdometer !== undefined ? Number(v.currentOdometer) : null,
+        value: toNumber(g._sum?.totalAmount),
+        transactionCount: g._count?.id ?? 0,
+      };
+    })
     .sort((a, b) => b.value - a.value)
     .slice(0, limit);
+}
+
+export interface FuelTypeBreakdownItem {
+  fuelType: string;
+  totalAmount: number;
+  litres: number;
+  transactionCount: number;
+}
+
+export async function getFuelTypeBreakdown(session: SessionPayload): Promise<FuelTypeBreakdownItem[]> {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
+  const grouped = await prisma.fuelTransaction.groupBy({
+    by: ["fuelType"],
+    where: { vehicle: { companyId } },
+    _sum: { totalAmount: true, litres: true },
+    _count: { id: true },
+  });
+  return grouped
+    .map((g) => ({
+      fuelType: g.fuelType,
+      totalAmount: toNumber(g._sum?.totalAmount),
+      litres: toNumber(g._sum?.litres),
+      transactionCount: g._count?.id ?? 0,
+    }))
+    .sort((a, b) => b.totalAmount - a.totalAmount);
+}
+
+export interface TransportSummaryItem {
+  id: string;
+  tripNumber: string;
+  date: Date;
+  vehicleRegistration: string;
+  source: string;
+  destination: string;
+  totalCost: number;
+}
+
+export interface TopRouteSummaryItem {
+  source: string;
+  destination: string;
+  tripCount: number;
+  totalCost: number;
+}
+
+export async function getRecentTripsSummary(session: SessionPayload, limit = 5) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
+  const [totalTrips, trips, totalCostAgg, routeGroups] = await Promise.all([
+    prisma.transportTrip.count({ where: { companyId } }),
+    prisma.transportTrip.findMany({
+      where: { companyId },
+      include: { vehicle: true },
+      orderBy: { date: "desc" },
+      take: limit,
+    }),
+    prisma.transportTrip.aggregate({
+      where: { companyId },
+      _sum: { totalCost: true },
+    }),
+    prisma.transportTrip.groupBy({
+      by: ["source", "destination"],
+      where: { companyId },
+      _sum: { totalCost: true },
+      _count: { id: true },
+    }),
+  ]);
+
+  const topRoutes: TopRouteSummaryItem[] = routeGroups
+    .map((r) => ({
+      source: r.source,
+      destination: r.destination,
+      tripCount: r._count?.id ?? 0,
+      totalCost: toNumber(r._sum?.totalCost),
+    }))
+    .sort((a, b) => b.totalCost - a.totalCost)
+    .slice(0, 5);
+
+  return {
+    totalTrips,
+    totalCost: toNumber(totalCostAgg._sum?.totalCost),
+    topRoutes,
+    trips: trips.map((t) => ({
+      id: t.id,
+      tripNumber: t.tripNumber,
+      date: t.date,
+      vehicleRegistration: t.vehicle.registrationNumber,
+      source: t.source,
+      destination: t.destination,
+      totalCost: toNumber(t.totalCost),
+    })),
+  };
+}
+
+export async function getFleetCounts(session: SessionPayload) {
+  requireCompanyAnalyticsAccess(session);
+  const companyId = session.companyId;
+  const [totalVehicles, totalMachines] = await Promise.all([
+    prisma.vehicle.count({ where: { companyId } }),
+    prisma.machine.count({ where: { companyId } }),
+  ]);
+  return { totalVehicles, totalMachines };
 }
 
 export async function getBudgetVsActual(session: SessionPayload) {

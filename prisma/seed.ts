@@ -84,7 +84,31 @@ function pick<T>(arr: T[]): T {
 }
 
 async function main() {
-  console.log("Seeding…");
+  console.log("Emptying all existing transactional and operational data…");
+  await prisma.expenseAttachment.deleteMany({});
+  await prisma.expenseApproval.deleteMany({});
+  await prisma.payment.deleteMany({});
+  await prisma.expense.deleteMany({});
+  await prisma.budgetAllocation.deleteMany({});
+  await prisma.budget.deleteMany({});
+  await prisma.goodsReceiptItem.deleteMany({});
+  await prisma.goodsReceipt.deleteMany({});
+  await prisma.purchaseOrderItem.deleteMany({});
+  await prisma.purchaseOrder.deleteMany({});
+  await prisma.purchaseRequestItem.deleteMany({});
+  await prisma.purchaseRequest.deleteMany({});
+  await prisma.maintenanceSpare.deleteMany({});
+  await prisma.consumableStockMovement.deleteMany({});
+  await prisma.maintenanceSchedule.deleteMany({});
+  await prisma.maintenanceRecord.deleteMany({});
+  await prisma.maintenanceRequest.deleteMany({});
+  await prisma.fuelTransaction.deleteMany({});
+  await prisma.transportTrip.deleteMany({});
+  await prisma.vehicleDocument.deleteMany({});
+  await prisma.notification.deleteMany({});
+  await prisma.auditLog.deleteMany({});
+  await prisma.reportJob.deleteMany({});
+  console.log("Cleanup complete. Seeding fresh data…");
 
   // ── Company (single-tenant for now) ─────────────────────────
   // Placeholder name — no real company name was found anywhere in the
@@ -369,63 +393,43 @@ async function main() {
     });
   }
 
-  // ── Sample expenses across the last 6 months, with approvals + payments ─
+  // ── Sample expenses: 30 daily expenses + 60 trailing monthly expenses ─
   const deptList = Object.values(departments);
-  const existingExpenseCount = await prisma.expense.count();
   const paidExpenseIds: { id: string; expenseNumber: string; total: number; vendorId: string | null }[] = [];
-  if (existingExpenseCount === 0) {
-    let seq = 1;
-    for (let i = 0; i < 90; i++) {
-      const date = daysAgo(Math.floor(Math.random() * 180));
+  let seq = 1;
+
+  // 1. Daily expenses across the past 30 days (ensures continuous spots on daily graph line)
+  for (let d = 29; d >= 0; d--) {
+    const countForDay = d === 0 ? 3 : (d % 3 === 0 ? 2 : 1);
+    for (let j = 0; j < countForDay; j++) {
+      const date = daysAgo(d);
+      date.setHours(9 + j * 3, 15 * j, 0, 0);
+
       const sub = pick(subcategories);
       const dept = pick(deptList);
-      const amount = randomBetween(500, 45000);
+      const amount = randomBetween(1200, 32000);
       const tax = Math.round(amount * 0.18 * 100) / 100;
       const total = amount + tax;
       const expenseNumber = `EXP-${String(seq++).padStart(6, "0")}`;
-      const vendorId = Math.random() > 0.4 ? pick(Object.values(vendors)).id : null;
+      const vendorId = Math.random() > 0.35 ? pick(Object.values(vendors)).id : null;
 
-      // Invoice-presence-gated workflow: which scenario this expense follows
-      // (and hence its initial status) is decided once, right here, exactly
-      // like createExpenseAction does for a real submission.
-      const hasInvoice = Math.random() < 0.6;
-      let status: string = hasInvoice ? "SUBMITTED" : "APPROVAL_PENDING";
+      // Ensure at least one PAID expense each day so the spot has spend; recent days have approval queue items
+      let status: string = "PAID";
+      const hasInvoice = true;
+      if (d <= 3 && j > 0) {
+        status = j === 1 ? "SUBMITTED" : "APPROVAL_PENDING";
+      } else if (d === 5 && j === 1) {
+        status = "REVIEWED";
+      }
+
       const approvalSteps: { action: string; actedById: string; fromStatus: string | null; toStatus: string; remarks?: string }[] = [
-        { action: "SUBMITTED", actedById: users[ROLES.EMPLOYEE].id, fromStatus: null, toStatus: status },
+        { action: "SUBMITTED", actedById: users[ROLES.EMPLOYEE].id, fromStatus: null, toStatus: "SUBMITTED" },
       ];
-
-      // No-invoice path: an admin approves (re-entering at SUBMITTED) or rejects.
-      if (!hasInvoice) {
-        const roll = Math.random();
-        if (roll < 0.15) {
-          // stays APPROVAL_PENDING — nothing further to log
-        } else if (roll < 0.25) {
-          approvalSteps.push({ action: "REJECTED", actedById: users[ROLES.ADMIN].id, fromStatus: "APPROVAL_PENDING", toStatus: "REJECTED", remarks: "No invoice attached and the expense could not be verified." });
-          status = "REJECTED";
-        } else {
-          approvalSteps.push({ action: "APPROVED", actedById: users[ROLES.ADMIN].id, fromStatus: "APPROVAL_PENDING", toStatus: "SUBMITTED" });
-          status = "SUBMITTED";
-        }
+      if (status === "REVIEWED" || status === "PAID") {
+        approvalSteps.push({ action: "REVIEWED", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "SUBMITTED", toStatus: "REVIEWED" });
       }
-
-      // Both paths converge at SUBMITTED: reviewed or rejected.
-      if (status === "SUBMITTED") {
-        const roll = Math.random();
-        if (roll < 0.15) {
-          // stays SUBMITTED
-        } else if (roll < 0.25) {
-          approvalSteps.push({ action: "REJECTED", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "SUBMITTED", toStatus: "REJECTED", remarks: "Invoice does not match submitted amount." });
-          status = "REJECTED";
-        } else {
-          approvalSteps.push({ action: "REVIEWED", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "SUBMITTED", toStatus: "REVIEWED" });
-          status = "REVIEWED";
-        }
-      }
-
-      // Reviewed expenses may go on to be paid.
-      if (status === "REVIEWED" && Math.random() >= 0.2) {
+      if (status === "PAID") {
         approvalSteps.push({ action: "PAID", actedById: users[ROLES.ACCOUNTS].id, fromStatus: "REVIEWED", toStatus: "PAID" });
-        status = "PAID";
       }
 
       const expense = await prisma.expense.create({
@@ -465,46 +469,73 @@ async function main() {
       if (status === "PAID") {
         paidExpenseIds.push({ id: expense.id, expenseNumber: expense.expenseNumber, total, vendorId });
       }
-
-      // Every with-invoice expense gets a real generated PDF actually
-      // uploaded to Cloudinary as its invoice, so demo links work instead
-      // of 404ing (and hasInvoice always corresponds to a real attachment).
-      if (hasInvoice) {
-        const pdfBuffer = await buildPlaceholderReceiptPdf(expenseNumber, total);
-        const storageKey = await uploadSeedAttachment(pdfBuffer, `mecs_seed_${expenseNumber}`);
-        if (storageKey) {
-          await prisma.expenseAttachment.create({
-            data: {
-              expenseId: expense.id,
-              fileName: `invoice-${expenseNumber}.pdf`,
-              storageKey,
-              fileType: "application/pdf",
-              fileSizeBytes: BigInt(pdfBuffer.byteLength),
-              uploadedById: users[ROLES.EMPLOYEE].id,
-              attachmentType: "INVOICE",
-            },
-          });
-        }
-      }
     }
+  }
 
-    // Payments for a sample of the paid expenses (vendor-billed ones only).
-    let paySeq = 1;
-    for (const exp of paidExpenseIds.filter((e) => e.vendorId).slice(0, 20)) {
-      await prisma.payment.create({
+  // 2. Trailing monthly expenses across the last 12 months & prior year (for monthly trend & YoY)
+  for (let m = 1; m <= 24; m++) {
+    const expensesThisMonth = randomBetween(2, 4);
+    for (let k = 0; k < expensesThisMonth; k++) {
+      const date = daysAgo(m * 30 + Math.floor(Math.random() * 25));
+      const sub = pick(subcategories);
+      const dept = pick(deptList);
+      const amount = randomBetween(3000, 45000);
+      const tax = Math.round(amount * 0.18 * 100) / 100;
+      const total = amount + tax;
+      const expenseNumber = `EXP-${String(seq++).padStart(6, "0")}`;
+      const vendorId = Math.random() > 0.35 ? pick(Object.values(vendors)).id : null;
+
+      const expense = await prisma.expense.create({
         data: {
           companyId,
-          paymentNumber: `PAY-${String(paySeq++).padStart(6, "0")}`,
-          expenseId: exp.id,
-          vendorId: exp.vendorId!,
-          amount: exp.total,
-          paymentDate: daysAgo(Math.floor(Math.random() * 30)),
-          method: pick(["CASH", "UPI", "BANK_TRANSFER", "NEFT", "CHEQUE"]) as never,
+          expenseNumber,
+          expenseDate: date,
+          categoryId: sub.categoryId,
+          subcategoryId: sub.id,
+          amount,
+          taxAmount: tax,
+          totalAmount: total,
+          departmentId: dept.id,
+          employeeId: users[ROLES.EMPLOYEE].id,
+          vendorId,
+          paymentMethod: pick(["BANK_TRANSFER", "NEFT", "CHEQUE"]) as never,
+          description: `${sub.name} expense — ${dept.name}`,
           status: "PAID",
-          createdById: users[ROLES.ACCOUNTS].id,
+          hasInvoice: true,
         },
       });
+
+      await prisma.expenseApproval.create({
+        data: {
+          expenseId: expense.id,
+          approvalLevel: 1,
+          action: "PAID",
+          actedById: users[ROLES.ACCOUNTS].id,
+          fromStatus: "REVIEWED",
+          toStatus: "PAID",
+        },
+      });
+
+      paidExpenseIds.push({ id: expense.id, expenseNumber: expense.expenseNumber, total, vendorId });
     }
+  }
+
+  // Payments for a sample of the paid expenses (vendor-billed ones only)
+  let paySeq = 1;
+  for (const exp of paidExpenseIds.filter((e) => e.vendorId).slice(0, 30)) {
+    await prisma.payment.create({
+      data: {
+        companyId,
+        paymentNumber: `PAY-${String(paySeq++).padStart(6, "0")}`,
+        expenseId: exp.id,
+        vendorId: exp.vendorId!,
+        amount: exp.total,
+        paymentDate: daysAgo(Math.floor(Math.random() * 25)),
+        method: pick(["CASH", "UPI", "BANK_TRANSFER", "NEFT", "CHEQUE"]) as never,
+        status: "PAID",
+        createdById: users[ROLES.ACCOUNTS].id,
+      },
+    });
   }
 
   // ── Fuel transactions (with one anomaly), driver per-record ─

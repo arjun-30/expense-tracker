@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, IndianRupee, Clock, Wallet, Receipt } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { isAdminRole, expenseVisibilityWhere } from "@/lib/rbac";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ExpenseRow } from "@/components/expenses/expense-row";
@@ -38,9 +39,13 @@ export default async function ExpensesPage({
   // ignore any ?department= param they might pass to probe other departments.
   const departmentId = admin ? parseFilterParam(sp.department) : undefined;
 
-  const where = {
+  const scopeWhere = {
     companyId: session.companyId,
     ...expenseVisibilityWhere(session),
+  };
+
+  const where = {
+    ...scopeWhere,
     ...(status ? { status } : {}),
     ...(departmentId ? { departmentId } : {}),
     ...(q
@@ -54,7 +59,7 @@ export default async function ExpensesPage({
       : {}),
   };
 
-  const [expenses, total, departments] = await Promise.all([
+  const [expenses, total, departments, spendAgg, pendingCount, unpaidAgg] = await Promise.all([
     prisma.expense.findMany({
       where,
       include: {
@@ -70,6 +75,17 @@ export default async function ExpensesPage({
     }),
     prisma.expense.count({ where }),
     admin ? prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+    prisma.expense.aggregate({
+      where: { ...scopeWhere, status: { in: ["APPROVED", "REVIEWED", "PAID"] } },
+      _sum: { totalAmount: true },
+    }),
+    prisma.expense.count({
+      where: { ...scopeWhere, status: { in: ["SUBMITTED", "APPROVAL_PENDING"] } },
+    }),
+    prisma.expense.aggregate({
+      where: { ...scopeWhere, status: { in: ["APPROVED", "REVIEWED"] } },
+      _sum: { totalAmount: true },
+    }),
   ]);
 
   return (
@@ -91,6 +107,30 @@ export default async function ExpensesPage({
           </Button>
         }
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Spend" value={Number(spendAgg._sum?.totalAmount ?? 0)} icon={IndianRupee} subtext="Approved and settled spend" />
+        <KpiCard
+          label="Pending Approval"
+          value={pendingCount}
+          icon={Clock}
+          formatAsCurrency={false}
+          subtext="Awaiting review"
+        />
+        <KpiCard
+          label="Approved (Unpaid)"
+          value={Number(unpaidAgg._sum?.totalAmount ?? 0)}
+          icon={Wallet}
+          subtext="Cleared for payout"
+        />
+        <KpiCard
+          label="Total Records"
+          value={total}
+          icon={Receipt}
+          formatAsCurrency={false}
+          subtext="Logged expenses"
+        />
+      </div>
 
       <ExpenseFilters
         admin={admin}

@@ -1,21 +1,19 @@
 import {
   LayoutDashboard,
   Receipt,
-  Fuel,
+  Wallet,
+  PiggyBank,
   Truck,
+  Fuel,
   Route,
   Cog,
   Wrench,
   ShoppingCart,
   Building2,
-  Wallet,
-  PiggyBank,
   BarChart3,
-  ScrollText,
-  User,
   Users,
-  ShieldCheck,
   Settings,
+  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,8 +22,6 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  /** Sub-items nested under this one (e.g. Settings -> Users & Roles, Roles).
-   * One level deep only — no nav item here currently needs more than that. */
   children?: NavItem[];
 }
 
@@ -41,23 +37,19 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Expenses",
+    label: "Finance",
     items: [
       { key: "expenses", label: "Expenses", href: "/expenses", icon: Receipt },
+      { key: "payments", label: "Payments", href: "/payments", icon: Wallet },
       { key: "budgets", label: "Budgets", href: "/budgets", icon: PiggyBank },
     ],
   },
   {
-    label: "Fleet",
+    label: "Operations",
     items: [
-      { key: "fuel", label: "Fuel", href: "/fuel", icon: Fuel },
       { key: "vehicles", label: "Vehicles", href: "/vehicles", icon: Truck },
+      { key: "fuel", label: "Fuel", href: "/fuel", icon: Fuel },
       { key: "transportation", label: "Transportation", href: "/transportation", icon: Route },
-    ],
-  },
-  {
-    label: "Assets",
-    items: [
       { key: "machinery", label: "Machinery", href: "/machinery", icon: Cog },
       { key: "maintenance", label: "Maintenance", href: "/maintenance", icon: Wrench },
     ],
@@ -67,7 +59,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "purchases", label: "Purchases", href: "/purchases", icon: ShoppingCart },
       { key: "vendors", label: "Vendors", href: "/vendors", icon: Building2 },
-      { key: "payments", label: "Payments", href: "/payments", icon: Wallet },
     ],
   },
   {
@@ -80,18 +71,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Administration",
     items: [
-      {
-        key: "settings",
-        label: "Settings",
-        href: "/settings",
-        icon: Settings,
-        children: [
-          { key: "profile", label: "Profile", href: "/profile", icon: User },
-          { key: "settings", label: "Organization Settings", href: "/settings", icon: Settings },
-          { key: "usersRoles", label: "Users & Roles", href: "/users", icon: Users },
-          { key: "roles", label: "Roles", href: "/roles", icon: ShieldCheck },
-        ],
-      },
+      { key: "settings", label: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];

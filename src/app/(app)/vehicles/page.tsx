@@ -1,7 +1,9 @@
+import { Truck, CheckCircle2, Gauge, AlertTriangle } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { VehicleFormDialog } from "@/components/fleet/vehicle-form-dialog";
@@ -35,6 +37,18 @@ export default async function VehiclesPage() {
 
   const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER);
 
+  const totalFleet = vehicles.length;
+  const activeFleet = vehicles.filter((v) => v.status === "ACTIVE").length;
+  const totalKm = vehicles.reduce((s, v) => s + Number(v.currentOdometer ?? 0), 0);
+  let expiringDocsCount = 0;
+  for (const v of vehicles) {
+    for (const d of v.documents) {
+      if (d.validUntil && daysUntil(d.validUntil) <= 30) {
+        expiringDocsCount++;
+      }
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -42,6 +56,26 @@ export default async function VehiclesPage() {
         description="Vehicle registry, documents and operating status"
         action={canManage ? <VehicleFormDialog departments={departments} /> : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Vehicles" value={totalFleet} icon={Truck} formatAsCurrency={false} subtext="Registered vehicles" />
+        <KpiCard label="Active Vehicles" value={activeFleet} icon={CheckCircle2} formatAsCurrency={false} subtext="In service" />
+        <KpiCard
+          label="Total Mileage"
+          value={totalKm}
+          icon={Gauge}
+          formatAsCurrency={false}
+          formattedValue={`${formatNumber(totalKm)} km`}
+          subtext="Cumulative odometer"
+        />
+        <KpiCard
+          label="Expiring Docs"
+          value={expiringDocsCount}
+          icon={AlertTriangle}
+          formatAsCurrency={false}
+          subtext={expiringDocsCount > 0 ? "Expiring within 30 days" : "All up to date"}
+        />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

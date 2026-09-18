@@ -28,10 +28,10 @@ export function FloatingNotificationButton({
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="fixed right-6 bottom-6 z-50">
+    <div className="fixed right-4 bottom-4 md:right-6 md:bottom-6 z-50">
       <Popover>
         <PopoverTrigger asChild>
-          <Button size="icon" className="relative h-12 w-12 rounded-full bg-sidebar-hover text-white shadow-lg hover:bg-sidebar-hover/90">
+          <Button size="icon" className="relative h-11 w-11 md:h-12 md:w-12 rounded-full bg-sidebar-hover text-white shadow-lg hover:bg-sidebar-hover/90">
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
               <Badge className="absolute -top-1 -right-1 h-4 min-w-4 justify-center px-1 text-[10px]" variant="destructive">
@@ -41,7 +41,7 @@ export function FloatingNotificationButton({
             <span className="sr-only">Notifications{unreadCount > 0 ? ` (${unreadCount} unread)` : ""}</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" side="top" className="w-80">
+        <PopoverContent align="end" side="top" className="w-[calc(100vw-2rem)] sm:w-80 max-w-sm">
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium">Notifications</p>
             <Button

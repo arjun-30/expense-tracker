@@ -32,7 +32,7 @@ export function DeleteRoleButton({ roleId, roleName }: { roleId: string; roleNam
         return;
       }
       toast.success("Role deleted");
-      router.push("/roles");
+      router.push("/settings?tab=roles");
       router.refresh();
     });
   }

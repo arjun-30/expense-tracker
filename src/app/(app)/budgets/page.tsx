@@ -1,7 +1,9 @@
+import { PiggyBank, IndianRupee, Scale, Gauge } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -23,6 +25,11 @@ export default async function BudgetsPage() {
 
   const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.ACCOUNTS);
 
+  const totalAllocated = budgets.reduce((s, b) => s + b.amount, 0);
+  const totalActual = budgets.reduce((s, b) => s + b.actual, 0);
+  const netVariance = totalAllocated - totalActual;
+  const overallUtilization = totalAllocated > 0 ? Math.round((totalActual / totalAllocated) * 100) : 0;
+
   return (
     <div>
       <PageHeader
@@ -30,6 +37,25 @@ export default async function BudgetsPage() {
         description="Budget allocations and variance tracking"
         action={canManage ? <BudgetFormDialog departments={departments} categories={categories} /> : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Allocated" value={totalAllocated} icon={PiggyBank} subtext="Active budget pool" />
+        <KpiCard label="Actual Spend" value={totalActual} icon={IndianRupee} subtext="Tracked expenses" />
+        <KpiCard
+          label="Net Variance"
+          value={netVariance}
+          icon={Scale}
+          subtext={netVariance >= 0 ? "Under budget" : "Over budget"}
+        />
+        <KpiCard
+          label="Utilization"
+          value={overallUtilization}
+          formattedValue={`${overallUtilization}%`}
+          icon={Gauge}
+          formatAsCurrency={false}
+          subtext={`${overallUtilization}% used overall`}
+        />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

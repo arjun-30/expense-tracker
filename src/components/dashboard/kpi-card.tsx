@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, type LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/format";
@@ -35,24 +35,28 @@ export function KpiCard({
   const isGood = hasDelta && (deltaGoodDirection === "up" ? isPositive : !isPositive);
 
   return (
-    <Card className="transition-shadow hover:shadow-md">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" />
+    <Card className="transition-all hover:shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+        <CardTitle className="text-xs font-medium text-muted-foreground tracking-wide truncate">{label}</CardTitle>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
         </span>
       </CardHeader>
       <CardContent>
-        <div className="font-heading text-2xl font-semibold tabular-nums">
+        <div className="font-heading text-2xl font-bold tracking-tight tabular-nums text-foreground">
           {formattedValue ?? (formatAsCurrency ? formatINR(value, precise) : value.toLocaleString("en-IN"))}
         </div>
-        {hasDelta ? (
-          <p className={cn("mt-1 flex items-center gap-1 text-xs font-medium", isGood ? "text-status-good" : "text-status-critical")}>
-            {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-            {Math.abs(deltaPct!).toFixed(1)}% {deltaLabel}
-          </p>
-        ) : subtext ? (
-          <p className="mt-1 text-xs text-muted-foreground">{subtext}</p>
+        {(hasDelta || subtext) ? (
+          <div className="mt-1">
+            {hasDelta ? (
+              <p className={cn("flex items-center gap-1 text-[11px] font-medium", isGood ? "text-status-good" : "text-status-critical")}>
+                {isPositive ? <ArrowUp className="h-3 w-3 shrink-0" /> : <ArrowDown className="h-3 w-3 shrink-0" />}
+                <span>{Math.abs(deltaPct!).toFixed(1)}% {deltaLabel}</span>
+              </p>
+            ) : subtext ? (
+              <p className="text-[11px] text-muted-foreground truncate">{subtext}</p>
+            ) : null}
+          </div>
         ) : null}
       </CardContent>
     </Card>

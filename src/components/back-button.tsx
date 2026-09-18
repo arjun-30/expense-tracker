@@ -9,10 +9,23 @@ import { Button } from "@/components/ui/button";
  * history (router.back() is equivalent to the native back action, not a
  * separate navigation stack entry), rather than a hardcoded destination
  * that would ignore where the user actually navigated from. */
-export function BackButton() {
+export function BackButton({ fallbackHref }: { fallbackHref?: string } = {}) {
   const router = useRouter();
   return (
-    <Button variant="ghost" size="sm" className="mb-2 -ml-2" onClick={() => router.back()}>
+    <Button
+      variant="ghost"
+      size="sm"
+      className="mb-2 -ml-2"
+      onClick={() => {
+        if (typeof window !== "undefined" && window.history.length > 1) {
+          router.back();
+        } else if (fallbackHref) {
+          router.push(fallbackHref);
+        } else {
+          router.back();
+        }
+      }}
+    >
       <ChevronLeft className="h-4 w-4" /> Back
     </Button>
   );

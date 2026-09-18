@@ -99,11 +99,11 @@ export function VehicleFormDialog({ departments }: { departments: { id: string; 
             <Input id="insuranceExpiry" type="date" {...register("insuranceExpiry")} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="pollutionExpiry">Pollution cert. expiry</Label>
+            <Label htmlFor="pollutionExpiry">Pollution certificate expiry</Label>
             <Input id="pollutionExpiry" type="date" {...register("pollutionExpiry")} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="fitnessExpiry">Fitness cert. expiry</Label>
+            <Label htmlFor="fitnessExpiry">Fitness certificate expiry</Label>
             <Input id="fitnessExpiry" type="date" {...register("fitnessExpiry")} />
           </div>
           <DialogFooter className="col-span-2">

@@ -1,7 +1,9 @@
+import { Cog, CheckCircle2, AlertTriangle, Wrench } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { MachineFormDialog } from "@/components/maintenance/machine-form-dialog";
@@ -27,6 +29,9 @@ export default async function MachineryPage() {
     prisma.maintenanceRecord.groupBy({ by: ["machineId"], where: { machine: { companyId: session.companyId } }, _sum: { totalCost: true } }),
   ]);
   const costMap = new Map(maintenanceCosts.map((m) => [m.machineId, Number(m._sum?.totalCost ?? 0)]));
+  const totalMaintenanceCost = maintenanceCosts.reduce((s, m) => s + Number(m._sum?.totalCost ?? 0), 0);
+  const runningCount = machines.filter((m) => m.status === "RUNNING").length;
+  const attentionCount = machines.filter((m) => m.status === "UNDER_MAINTENANCE" || m.status === "BREAKDOWN").length;
 
   const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MAINTENANCE_MANAGER);
 
@@ -37,6 +42,19 @@ export default async function MachineryPage() {
         description="Machine asset register"
         action={canManage ? <MachineFormDialog departments={departments} /> : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Machines" value={machines.length} icon={Cog} formatAsCurrency={false} subtext="Factory equipment units" />
+        <KpiCard label="Operational" value={runningCount} icon={CheckCircle2} formatAsCurrency={false} subtext="Currently running" />
+        <KpiCard
+          label="Attention Needed"
+          value={attentionCount}
+          icon={AlertTriangle}
+          formatAsCurrency={false}
+          subtext={attentionCount > 0 ? "Maintenance or breakdown" : "All operational"}
+        />
+        <KpiCard label="Total Maintenance" value={totalMaintenanceCost} icon={Wrench} subtext="All time repair spend" />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

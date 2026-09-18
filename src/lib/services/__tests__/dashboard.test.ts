@@ -6,6 +6,7 @@ import type { SessionPayload } from "@/lib/session";
 import {
   getKpis,
   getExpenseTrend,
+  getDailyExpenseTrend,
   getExpenseTrendYoy,
   getExpenseByCategory,
   getDepartmentSpending,
@@ -46,6 +47,7 @@ describe("Company-analytics dashboard functions refuse restricted roles at the d
   const cases: [string, (session: SessionPayload) => Promise<unknown>][] = [
     ["getKpis", (s) => getKpis(s)],
     ["getExpenseTrend", (s) => getExpenseTrend(s)],
+    ["getDailyExpenseTrend", (s) => getDailyExpenseTrend(s)],
     ["getExpenseTrendYoy", (s) => getExpenseTrendYoy(s)],
     ["getExpenseByCategory", (s) => getExpenseByCategory(s)],
     ["getDepartmentSpending", (s) => getDepartmentSpending(s)],

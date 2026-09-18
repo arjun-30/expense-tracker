@@ -4,39 +4,159 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { QuickAddDepartment, QuickAddCostCenter, QuickAddCategory, QuickAddSubcategory, AlertRuleToggle } from "@/components/settings/quick-add-forms";
+import { formatDate } from "@/lib/format";
+import { SettingsTabs } from "@/components/settings/settings-tabs";
+import { UserFormDialog } from "@/components/users/user-form-dialog";
+import { UserRoleSelect, UserActiveToggle } from "@/components/users/user-row-controls";
+import { RoleFormDialog } from "@/components/roles/role-form-dialog";
+import { RoleRow } from "@/components/roles/role-row";
+import {
+  QuickAddDepartment,
+  QuickAddCostCenter,
+  QuickAddCategory,
+  QuickAddSubcategory,
+  AlertRuleToggle,
+} from "@/components/settings/quick-add-forms";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | undefined>>;
+}) {
   const { session, allowed } = await guardModule("settings");
   if (!allowed) return <AccessRestricted />;
 
-  // MODULE_ACCESS.settings already restricts this page to SUPER_ADMIN
-  // (the only role with settings.manage today); this check stays as
-  // defense-in-depth, matching how other pages in this app double-check
-  // fine-grained permissions rather than relying on the module gate alone.
-  if (!hasPermission(session, "settings.manage")) return <AccessRestricted />;
+  const canManageSettings = hasPermission(session, "settings.manage");
+  const canManageUsers = hasPermission(session, "users.manage");
+  const canManageRoles = hasPermission(session, "roles.manage");
 
-  const [departments, costCenters, categories, notificationRules] = await Promise.all([
+  if (!canManageSettings && !canManageUsers && !canManageRoles) return <AccessRestricted />;
+
+  const sp = searchParams ? await searchParams : {};
+  const validTabs = ["users", "roles", "departments", "cost-centers", "categories", "rules"];
+  const defaultTab = sp.tab && validTabs.includes(sp.tab) ? sp.tab : "users";
+
+  const [departments, costCenters, categories, notificationRules, users, roles] = await Promise.all([
     prisma.department.findMany({ where: { companyId: session.companyId }, orderBy: { name: "asc" } }),
     prisma.costCenter.findMany({ where: { companyId: session.companyId }, include: { department: true }, orderBy: { name: "asc" } }),
     prisma.expenseCategory.findMany({ where: { companyId: session.companyId }, include: { subcategories: true }, orderBy: { name: "asc" } }),
     prisma.notificationRule.findMany({ where: { companyId: session.companyId }, orderBy: { key: "asc" } }),
+    prisma.user.findMany({
+      where: { companyId: session.companyId },
+      include: { department: true, userRoles: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.role.findMany({
+      where: { companyId: session.companyId },
+      include: { _count: { select: { userRoles: true, rolePermissions: true } } },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
     <div>
-      <PageHeader title="Organization Settings" description="Departments, cost centers, categories and notification rules" />
+      <PageHeader
+        title="Settings"
+        description="Manage user accounts, roles, departments, cost centers, expense categories and notification rules"
+      />
 
-      <Tabs defaultValue="departments">
-        <TabsList>
-          <TabsTrigger value="departments">Departments</TabsTrigger>
-          <TabsTrigger value="cost-centers">Cost Centers</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="rules">Notification Rules</TabsTrigger>
-        </TabsList>
+      <SettingsTabs defaultTab={defaultTab}>
+        <TabsContent value="users">
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 space-y-0 pb-4">
+              <div>
+                <CardTitle className="text-base">Users</CardTitle>
+                <p className="text-sm text-muted-foreground">Manage user accounts and role assignments</p>
+              </div>
+              {canManageUsers && <UserFormDialog roles={roles} departments={departments} />}
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Joined</TableHead>
+                    <TableHead>Active</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
+                      <TableCell>{u.department?.name ?? "—"}</TableCell>
+                      <TableCell>
+                        <UserRoleSelect userId={u.id} roleId={u.userRoles[0]?.roleId} roles={roles} departmentId={u.departmentId} />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatDate(u.createdAt)}</TableCell>
+                      <TableCell>
+                        <UserActiveToggle userId={u.id} isActive={u.isActive} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {users.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                        No users yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="roles">
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 space-y-0 pb-4">
+              <div>
+                <CardTitle className="text-base">Roles & Permissions</CardTitle>
+                <p className="text-sm text-muted-foreground">Configure roles and permissions for access control</p>
+              </div>
+              {canManageRoles && <RoleFormDialog />}
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Users</TableHead>
+                    <TableHead className="text-right">Permissions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles.map((r) => (
+                    <RoleRow
+                      key={r.id}
+                      id={r.id}
+                      name={r.name}
+                      description={r.description}
+                      isSystemRole={r.isSystemRole}
+                      userCount={r._count.userRoles}
+                      permissionCount={r._count.rolePermissions}
+                    />
+                  ))}
+                  {roles.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                        No roles yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="departments">
           <Card>
@@ -114,7 +234,7 @@ export default async function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+      </SettingsTabs>
     </div>
   );
 }

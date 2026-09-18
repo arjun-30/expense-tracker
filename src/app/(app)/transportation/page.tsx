@@ -1,7 +1,9 @@
+import { Route, Truck, IndianRupee, Building2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TripFormDialog } from "@/components/fleet/trip-form-dialog";
@@ -13,11 +15,13 @@ export default async function TransportationPage() {
   const { session, allowed } = await guardModule("transportation");
   if (!allowed) return <AccessRestricted />;
 
-  const [trips, vehicles, drivers, transporters] = await Promise.all([
+  const [trips, vehicles, drivers, transporters, tripStats, avgCostAgg] = await Promise.all([
     prisma.transportTrip.findMany({ where: { companyId: session.companyId }, include: { vehicle: true, driver: true, transporter: true }, orderBy: { date: "desc" }, take: 100 }),
     prisma.vehicle.findMany({ where: { companyId: session.companyId }, orderBy: { registrationNumber: "asc" } }),
     prisma.driver.findMany({ where: { companyId: session.companyId, isActive: true }, orderBy: { name: "asc" } }),
     prisma.transporter.findMany({ where: { companyId: session.companyId, isActive: true }, orderBy: { name: "asc" } }),
+    prisma.transportTrip.aggregate({ where: { companyId: session.companyId }, _sum: { totalCost: true }, _count: true }),
+    prisma.transportTrip.aggregate({ where: { companyId: session.companyId }, _avg: { totalCost: true } }),
   ]);
 
   const canManage = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.TRANSPORT_MANAGER);
@@ -35,6 +39,30 @@ export default async function TransportationPage() {
           />
         ) : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Freight Spend" value={Number(tripStats._sum?.totalCost ?? 0)} icon={Route} subtext="Hauling and delivery spend" />
+        <KpiCard
+          label="Trips Recorded"
+          value={tripStats._count}
+          icon={Truck}
+          formatAsCurrency={false}
+          subtext="Completed dispatches"
+        />
+        <KpiCard
+          label="Average Cost / Trip"
+          value={Number(avgCostAgg._avg?.totalCost ?? 0)}
+          icon={IndianRupee}
+          subtext="Per haul average"
+        />
+        <KpiCard
+          label="Active Carriers"
+          value={transporters.length}
+          icon={Building2}
+          formatAsCurrency={false}
+          subtext="Approved partners"
+        />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

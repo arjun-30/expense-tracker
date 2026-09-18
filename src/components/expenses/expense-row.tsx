@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye } from "lucide-react";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
+import { ExpenseStatusDisplay } from "@/components/expenses/status-display";
 import { formatDate, formatINR } from "@/lib/format";
 import type { ExpenseStatus } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
@@ -64,8 +63,11 @@ export function ExpenseRow({
         // transparent hides the base TableRow's inherited grey border-b
         // (from the global `* { border-color: var(--border) }` base rule)
         // so it can't peek out from behind the shadow at the bottom edge.
+        // Left accent bar and gentle breathing background pulse — avoids
+        // the 4-sided box-shadow collision when multiple adjacent rows
+        // are pending approval, while maintaining clear, professional urgency.
         approvalPending &&
-          "border-transparent bg-destructive/10 shadow-[inset_0_0_0_2px_var(--approval-pending-accent)] hover:bg-destructive/15 approval-pending-highlight",
+          "border-b border-destructive/20 bg-destructive/10 shadow-[inset_4px_0_0_0_var(--approval-pending-accent)] hover:bg-destructive/15 approval-pending-highlight",
       )}
     >
       <TableCell className="font-medium">
@@ -80,7 +82,7 @@ export function ExpenseRow({
       <TableCell>{employeeName}</TableCell>
       <TableCell className="text-right tabular-nums">{formatINR(totalAmount)}</TableCell>
       <TableCell>
-        <Badge variant={EXPENSE_STATUS_VARIANT[status]}>{EXPENSE_STATUS_LABELS[status]}</Badge>
+        <ExpenseStatusDisplay status={status} />
       </TableCell>
       <TableCell>
         {billStorageKey ? (

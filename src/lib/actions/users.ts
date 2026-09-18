@@ -52,6 +52,7 @@ export async function createUserAction(input: UserInput): Promise<ActionResult> 
     entityId: user.id,
     newValue: { name: user.name, email: user.email, role: role.name },
   });
+  revalidatePath("/settings");
   revalidatePath("/users");
   return { success: true, id: user.id };
 }
@@ -83,6 +84,7 @@ export async function updateUserRoleAction(userId: string, roleId: string, depar
     oldValue: { roles: existing.userRoles.map((ur) => ur.role.name) },
     newValue: { role: role.name },
   });
+  revalidatePath("/settings");
   revalidatePath("/users");
   return { success: true, id: userId };
 }
@@ -100,6 +102,7 @@ export async function toggleUserActiveAction(userId: string, isActive: boolean):
     entityType: "User",
     entityId: userId,
   });
+  revalidatePath("/settings");
   revalidatePath("/users");
   return { success: true };
 }

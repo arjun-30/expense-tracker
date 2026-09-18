@@ -231,16 +231,18 @@
  * animation's duration on every cycle. */
 @keyframes approval-pending-pulse {
   0%, 100% {
-    box-shadow: inset 0 0 0 2px var(--approval-pending-accent);
+    background-color: color-mix(in oklch, var(--approval-pending-accent) 8%, transparent);
+    box-shadow: inset 4px 0 0 0 var(--approval-pending-accent);
   }
   50% {
-    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--approval-pending-accent), white 35%);
+    background-color: color-mix(in oklch, var(--approval-pending-accent) 20%, transparent);
+    box-shadow: inset 4px 0 0 0 color-mix(in oklch, var(--approval-pending-accent), white 30%);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .approval-pending-highlight {
-    animation: approval-pending-pulse 2.5s ease-in-out infinite;
+    animation: approval-pending-pulse 2s ease-in-out infinite;
   }
 }
 

@@ -1,7 +1,9 @@
+import { IndianRupee, CheckCircle2, Clock, Building2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PaymentFormDialog } from "@/components/purchases/payment-form-dialog";
@@ -13,13 +15,17 @@ export default async function PaymentsPage() {
   const { session, allowed } = await guardModule("payments");
   if (!allowed) return <AccessRestricted />;
 
-  const [payments, vendors, expenses] = await Promise.all([
+  const [payments, vendors, expenses, paidAgg, pendingCount, paidCount] = await Promise.all([
     prisma.payment.findMany({ where: { companyId: session.companyId }, include: { vendor: true, expense: true }, orderBy: { paymentDate: "desc" }, take: 100 }),
     prisma.vendor.findMany({ where: { companyId: session.companyId, isActive: true }, orderBy: { name: "asc" } }),
     prisma.expense.findMany({ where: { companyId: session.companyId, vendorId: { not: null } }, include: { payments: true }, orderBy: { expenseDate: "desc" }, take: 200 }),
+    prisma.payment.aggregate({ where: { companyId: session.companyId, status: "PAID" }, _sum: { amount: true } }),
+    prisma.payment.count({ where: { companyId: session.companyId, status: "PENDING" } }),
+    prisma.payment.count({ where: { companyId: session.companyId, status: "PAID" } }),
   ]);
 
   const canRecord = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ACCOUNTS);
+  const distinctVendorsPaid = new Set(payments.filter(p => p.status === "PAID").map(p => p.vendorId)).size;
 
   const expenseOptions = expenses.map((e) => ({
     id: e.id,
@@ -36,6 +42,31 @@ export default async function PaymentsPage() {
         description="Vendor payments and settlement status"
         action={canRecord ? <PaymentFormDialog vendors={vendors} expenses={expenseOptions} /> : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard label="Total Disbursed" value={Number(paidAgg._sum?.amount ?? 0)} icon={IndianRupee} subtext="Successfully paid" />
+        <KpiCard
+          label="Settled Payments"
+          value={paidCount}
+          icon={CheckCircle2}
+          formatAsCurrency={false}
+          subtext="Completed transactions"
+        />
+        <KpiCard
+          label="Pending Settlement"
+          value={pendingCount}
+          icon={Clock}
+          formatAsCurrency={false}
+          subtext={pendingCount > 0 ? "Awaiting processing" : "All cleared"}
+        />
+        <KpiCard
+          label="Vendors Paid"
+          value={distinctVendorsPaid}
+          icon={Building2}
+          formatAsCurrency={false}
+          subtext="Distinct suppliers"
+        />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

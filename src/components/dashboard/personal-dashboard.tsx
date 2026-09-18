@@ -5,8 +5,8 @@ import { StatusCard } from "@/components/dashboard/status-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { EXPENSE_STATUS_LABELS, EXPENSE_STATUS_VARIANT } from "@/lib/status-labels";
+import { ExpenseStatusDisplay } from "@/components/expenses/status-display";
+import { EXPENSE_STATUS_LABELS } from "@/lib/status-labels";
 import { formatDate, formatINR } from "@/lib/format";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ExpenseStatus } from "@/generated/prisma/enums";
@@ -114,7 +114,7 @@ export async function PersonalDashboard({
                   <TableCell>{e.category.name}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatINR(Number(e.totalAmount))}</TableCell>
                   <TableCell>
-                    <Badge variant={EXPENSE_STATUS_VARIANT[e.status]}>{EXPENSE_STATUS_LABELS[e.status]}</Badge>
+                    <ExpenseStatusDisplay status={e.status} />
                   </TableCell>
                   <TableCell>
                     {e.attachments[0] ? (

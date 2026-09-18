@@ -1,6 +1,8 @@
+import { Building2, ShoppingBag, IndianRupee, Clock } from "lucide-react";
 import { guardModule } from "@/lib/guards";
 import { AccessRestricted } from "@/components/access-restricted";
 import { PageHeader } from "@/components/page-header";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { VendorFormDialog } from "@/components/vendors/vendor-form-dialog";
@@ -16,6 +18,11 @@ export default async function VendorsPage() {
   const vendors = await getVendorsWithStats(session.companyId);
   const canEdit = hasRole(session, ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.PURCHASE_MANAGER);
 
+  const activeVendorsCount = vendors.filter((v) => v.isActive).length;
+  const totalPurchasesSum = vendors.reduce((s, v) => s + v.totalPurchases, 0);
+  const totalPaidSum = vendors.reduce((s, v) => s + v.totalPayments, 0);
+  const totalOutstandingSum = vendors.reduce((s, v) => s + v.outstanding, 0);
+
   return (
     <div>
       <PageHeader
@@ -23,6 +30,24 @@ export default async function VendorsPage() {
         description="Supplier directory and spend analytics"
         action={canEdit ? <VendorFormDialog /> : undefined}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KpiCard
+          label="Active Vendors"
+          value={activeVendorsCount}
+          icon={Building2}
+          formatAsCurrency={false}
+          subtext={`${vendors.length} total suppliers`}
+        />
+        <KpiCard label="Total Purchases" value={totalPurchasesSum} icon={ShoppingBag} subtext="Contracted spend" />
+        <KpiCard label="Total Settled" value={totalPaidSum} icon={IndianRupee} subtext="Paid to vendors" />
+        <KpiCard
+          label="Outstanding Payable"
+          value={totalOutstandingSum}
+          icon={Clock}
+          subtext={totalOutstandingSum > 0 ? "Pending payment" : "All settled"}
+        />
+      </div>
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>

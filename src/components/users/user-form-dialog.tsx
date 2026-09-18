@@ -47,18 +47,18 @@ export function UserFormDialog({ roles, departments }: { roles: { id: string; na
       <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Add User</Button></DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>New user</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-3">
-          <div className="col-span-2 space-y-1">
+        <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="col-span-1 sm:col-span-2 space-y-1">
             <Label htmlFor="name">Full name *</Label>
             <Input id="name" {...register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
-          <div className="col-span-2 space-y-1">
+          <div className="col-span-1 sm:col-span-2 space-y-1">
             <Label htmlFor="email">Email *</Label>
             <Input id="email" type="email" {...register("email")} />
             {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
           </div>
-          <div className="col-span-2 space-y-1">
+          <div className="col-span-1 sm:col-span-2 space-y-1">
             <Label htmlFor="password">Temporary password *</Label>
             <Input id="password" type="password" {...register("password")} />
             {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
@@ -84,7 +84,7 @@ export function UserFormDialog({ roles, departments }: { roles: { id: string; na
               </Select>
             )} />
           </div>
-          <DialogFooter className="col-span-2">
+          <DialogFooter className="col-span-1 sm:col-span-2">
             <Button type="submit" disabled={submitting}>{submitting ? "Creating…" : "Create user"}</Button>
           </DialogFooter>
         </form>
