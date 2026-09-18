@@ -24,8 +24,8 @@ export function SettingsTabs({
 
   return (
     <Tabs defaultValue={defaultTab} onValueChange={handleValueChange} className="space-y-4">
-      <div className="w-full overflow-x-auto pb-1.5">
-        <TabsList className="inline-flex w-max min-w-full sm:min-w-0 h-auto p-1 gap-1">
+      <div className="w-full overflow-x-auto pb-1.5 flex justify-start sm:justify-end">
+        <TabsList className="inline-flex w-max sm:min-w-0 h-auto p-1 gap-1">
           <TabsTrigger value="users" className="gap-2 px-3 py-1.5 text-xs sm:text-sm whitespace-nowrap">
             <Users className="h-4 w-4" />
             <span>Users</span>
